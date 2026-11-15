@@ -85,30 +85,43 @@ function adaptHandoverRow(row) {
 
 // ---------------- Flow 6: Executor APIs ----------------
 
+function buildDemoDashboardPayload(list, action) {
+  return {
+    metrics: {
+      total_handover_cases: list.length,
+      pending_approval: list.filter((c) => c.status === 'PENDING_LEGAL_APPROVAL').length,
+      in_progress: list.filter((c) => c.status === 'HANDOVER_INITIATED').length,
+      completed_releases: list.filter((c) => c.status === 'COMPLETED').length,
+    },
+    cases: list.map((c) => ({
+      case_id: c.id,
+      case_number: c.id,
+      vault_owner: c.vault?.owner?.name || c.vault?.ownerName || 'Vault Owner',
+      beneficiary: c.beneficiary?.name || 'Beneficiary',
+      legal_verification_status: c.legalStatus,
+      handover_status: c.status,
+      updated_date: 'Oct 24, 2026',
+      action,
+    })),
+  }
+}
+
 // 1. GET /handover/executor/dashboard
 export async function getExecutorHandoverDashboardApi() {
   if (isDemoMode()) {
     const list = await mockListExecutorCases()
-    return {
-      metrics: {
-        total_handover_cases: list.length,
-        pending_approval: list.filter((c) => c.status === 'PENDING_LEGAL_APPROVAL').length,
-        in_progress: list.filter((c) => c.status === 'HANDOVER_INITIATED').length,
-        completed_releases: list.filter((c) => c.status === 'COMPLETED').length,
-      },
-      cases: list.map((c) => ({
-        case_id: c.id,
-        case_number: c.id,
-        vault_owner: c.vault?.owner?.name || 'Vault Owner',
-        beneficiary: c.beneficiary?.name || 'Beneficiary',
-        legal_verification_status: c.legalStatus,
-        handover_status: c.status,
-        updated_date: 'Oct 24, 2026',
-        action: 'MANAGE_HANDOVER',
-      })),
-    }
+    return buildDemoDashboardPayload(list, 'MANAGE_HANDOVER')
   }
   return apiFetch('/handover/executor/dashboard')
+}
+
+// 1b. GET /handover/beneficiary/dashboard
+export async function getBeneficiaryHandoverDashboardApi(user = null) {
+  if (isDemoMode()) {
+    const list = await mockListBeneficiaryCases(user)
+    return buildDemoDashboardPayload(list, 'OPEN_CASE')
+  }
+  return apiFetch('/handover/beneficiary/dashboard')
 }
 
 // 2. GET /handover/cases/{caseId}/details
@@ -397,62 +410,68 @@ export const listBeneficiaryCases = async (user) => {
   if (isDemoMode()) return mockListBeneficiaryCases(user)
 
   try {
-    const dash = await getExecutorHandoverDashboardApi()
+    const dash = await getBeneficiaryHandoverDashboardApi(user)
     const rawCases = Array.isArray(dash) ? dash : (dash?.cases || [])
+    const userEmail = (user?.identifier || user?.email || '').trim().toLowerCase()
 
     const result = []
     for (const c of rawCases) {
       try {
         const d = await getHandoverDetailsApi(c.case_id || c.case_number)
-        const bEmail = d.primary_beneficiary?.email || ''
-        const bName = d.primary_beneficiary?.name || c.beneficiary || ''
-        const userPrefix = (user?.identifier || user?.email || '').split('@')[0].toLowerCase()
+        const matchingBeneficiary = Array.isArray(c.beneficiaries)
+          ? c.beneficiaries.find((b) => (b?.email || '').trim().toLowerCase() === userEmail)
+          : null
 
-        // Match cases for this beneficiary if user email/name matches, or include if single active case
-        const isMatch = !userPrefix ||
-          bEmail.toLowerCase().includes(userPrefix) ||
-          bName.toLowerCase().includes(userPrefix) ||
-          (user?.fullName && bName.toLowerCase().includes(user.fullName.toLowerCase()))
+        const bEmail =
+          matchingBeneficiary?.email ||
+          user?.identifier ||
+          user?.email ||
+          d.primary_beneficiary?.email ||
+          ''
+        const bName =
+          matchingBeneficiary?.name ||
+          user?.fullName ||
+          d.primary_beneficiary?.name ||
+          c.beneficiary ||
+          ''
 
-        if (isMatch || rawCases.length === 1) {
-          const rawStatus = d.handover_status || c.handover_status || 'BENEFICIARY_VERIFICATION_PENDING'
-          let mappedStatus = rawStatus
-          if (rawStatus === 'IN PROGRESS' || rawStatus === 'APPROVED') {
-            mappedStatus = 'BENEFICIARY_VERIFICATION_PENDING'
-          } else if (rawStatus === 'RELEASED') {
-            mappedStatus = 'READY_FOR_ACCESS'
-          }
-
-          const rawAssets = d.authorized_assets || d.authorized_collections_and_assets || []
-          result.push({
-            id: c.case_number || c.case_id || d.case_number,
-            name: c.case_number || c.case_id,
-            status: mappedStatus,
-            vault: {
-              name: d.vault_owner?.vault_name || 'Kho di sản số (Digital Vault)',
-              ownerName: d.vault_owner?.name || c.vault_owner || '—',
-            },
-            beneficiary: {
-              userId: user?.id,
-              name: bName,
-              email: bEmail,
-            },
-            assets: rawAssets.map((a, idx) => ({
-              id: a.asset_id || a.id || `asset-${idx + 1}`,
-              name: a.asset_name || a.name || 'Tài sản số',
-              category: (a.category || a.asset_type || 'BANK_ACCOUNT').toUpperCase().replace(/\s+/g, '_'),
-              description: a.description || '',
-              forThisBeneficiary: true,
-              authorizedBeneficiaryIds: [user?.id].filter(Boolean),
-            })),
-          })
+        const rawStatus = d.handover_status || c.handover_status || 'BENEFICIARY_VERIFICATION_PENDING'
+        let mappedStatus = rawStatus
+        if (rawStatus === 'IN PROGRESS' || rawStatus === 'APPROVED') {
+          mappedStatus = 'BENEFICIARY_VERIFICATION_PENDING'
+        } else if (rawStatus === 'RELEASED') {
+          mappedStatus = 'READY_FOR_ACCESS'
         }
+
+        const rawAssets = d.authorized_assets || d.authorized_collections_and_assets || []
+        result.push({
+          id: c.case_number || c.case_id || d.case_number,
+          name: c.case_number || c.case_id,
+          status: mappedStatus,
+          vault: {
+            name: d.vault_owner?.vault_name || 'Kho di sản số (Digital Vault)',
+            ownerName: d.vault_owner?.name || c.vault_owner || '—',
+          },
+          beneficiary: {
+            userId: user?.id,
+            name: bName,
+            email: bEmail,
+          },
+          assets: rawAssets.map((a, idx) => ({
+            id: a.asset_id || a.id || `asset-${idx + 1}`,
+            name: a.asset_name || a.name || 'Tài sản số',
+            category: (a.category || a.asset_type || 'BANK_ACCOUNT').toUpperCase().replace(/\s+/g, '_'),
+            description: a.description || '',
+            forThisBeneficiary: true,
+            authorizedBeneficiaryIds: [user?.id].filter(Boolean),
+          })),
+        })
       } catch (err) {
         console.warn('Failed to load case detail for beneficiary list:', err)
       }
     }
 
-    if (result.length > 0) return result
+    return result
   } catch (e) {
     console.warn('Failed to fetch real beneficiary cases from dashboard, fallback to assets:', e)
   }
