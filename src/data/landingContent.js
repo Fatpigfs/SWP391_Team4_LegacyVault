@@ -28,7 +28,7 @@ const en = {
     titleLines: ['Protect what matters.', 'Release it when it', 'matters most.'],
     description:
       'Store passwords, documents, and important instructions in one secure vault. Give the right people access only when your chosen conditions are met.',
-    cta: { label: 'Create your vault', to: '/register' },
+    cta: { label: 'Your vault', to: '/register' },
     card: {
       title: 'Secure release model',
       description: 'A simple, controlled way to prepare access for the people who need it later.',
@@ -151,7 +151,7 @@ const en = {
   finalCta: {
     title: 'Ready to protect what matters?',
     description: 'Create your vault today and start organizing the essentials in one secure place.',
-    primary: { label: 'Create your vault', to: '/register' },
+    primary: { label: 'Your vault', to: '/register' },
     secondary: { label: 'Learn more', href: '#how-it-works' },
   },
 
@@ -192,7 +192,7 @@ const vi = {
     titleLines: ['Bảo vệ những gì quan trọng.', 'Trao lại vào đúng lúc', 'cần thiết nhất.'],
     description:
       'Lưu trữ mật khẩu, tài liệu và các chỉ dẫn quan trọng trong một kho an toàn. Chỉ cấp quyền truy cập cho đúng người khi các điều kiện bạn đặt ra được đáp ứng.',
-    cta: { label: 'Tạo kho của bạn', to: '/register' },
+    cta: { label: 'Kho của bạn', to: '/register' },
     card: {
       title: 'Cơ chế trao quyền an toàn',
       description: 'Cách đơn giản và có kiểm soát để chuẩn bị quyền truy cập cho những người cần đến sau này.',
@@ -315,7 +315,7 @@ const vi = {
   finalCta: {
     title: 'Sẵn sàng bảo vệ những gì quan trọng?',
     description: 'Tạo kho của bạn ngay hôm nay và bắt đầu sắp xếp những thứ thiết yếu tại một nơi an toàn.',
-    primary: { label: 'Tạo kho của bạn', to: '/register' },
+    primary: { label: 'Kho của bạn', to: '/register' },
     secondary: { label: 'Tìm hiểu thêm', href: '#how-it-works' },
   },
 

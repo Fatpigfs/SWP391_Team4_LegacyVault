@@ -30,6 +30,7 @@ import { listBeneficiaryCases, requestHandoverOtpApi } from '../../services/hand
 
 function getMilestoneDoneCount(status) {
   if (status === HANDOVER_STATUS.REJECTED) return null
+  if (status === HANDOVER_STATUS.PENDING_LEGAL_APPROVAL || status === HANDOVER_STATUS.APPROVED) return 0
   if (status === HANDOVER_STATUS.COMPLETED) return 4
   if (
     hasReached(status, HANDOVER_STATUS.READY_FOR_ACCESS) ||
@@ -81,6 +82,13 @@ export default function BeneficiaryHandoversPage() {
   }, [selectedCaseForClaim, claimLoading])
 
   const handleOpenCase = (handover) => {
+    if (
+      handover.status === HANDOVER_STATUS.PENDING_LEGAL_APPROVAL ||
+      handover.status === HANDOVER_STATUS.APPROVED
+    ) {
+      return
+    }
+
     // If identity has already been verified, navigate directly to case details
     if (hasReached(handover.status, HANDOVER_STATUS.IDENTITY_VERIFIED)) {
       navigate(`/dashboard/beneficiary/handover/${handover.id}`)
@@ -277,15 +285,21 @@ export default function BeneficiaryHandoversPage() {
                   const remainingAssets = Math.max(0, assets.length - previewAssets.length)
                   const isCompleted = handover.status === HANDOVER_STATUS.COMPLETED
                   const isRejected = handover.status === HANDOVER_STATUS.REJECTED
+                  const isWaitingForExecutor =
+                    handover.status === HANDOVER_STATUS.PENDING_LEGAL_APPROVAL ||
+                    handover.status === HANDOVER_STATUS.APPROVED
                   const doneCount = getMilestoneDoneCount(handover.status)
                   const cardToneClass = isRejected
                     ? 'beneficiary-case-card--danger'
                     : !isCompleted
                     ? 'beneficiary-case-card--pending'
                     : ''
-                  const nextActionText =
-                    t.beneficiary.nextAction[handover.status] ||
-                    (isVi ? 'Xem chi tiết hồ sơ' : 'Open case details')
+                  const nextActionText = isWaitingForExecutor
+                    ? (isVi
+                      ? 'Đang chờ Người thi hành phát hành bàn giao'
+                      : 'Waiting for Executor to initiate handover')
+                    : (t.beneficiary.nextAction[handover.status] ||
+                      (isVi ? 'Xem chi tiết hồ sơ' : 'Open case details'))
 
                   return (
                     <article
@@ -397,7 +411,11 @@ export default function BeneficiaryHandoversPage() {
                           )}
                           {nextActionText}
                         </span>
-                        <Button onClick={() => handleOpenCase(handover)} icon="arrowRight">
+                        <Button
+                          onClick={() => handleOpenCase(handover)}
+                          icon="arrowRight"
+                          disabled={isWaitingForExecutor}
+                        >
                           {t.beneficiary.open}
                         </Button>
                       </footer>
@@ -489,11 +507,11 @@ export default function BeneficiaryHandoversPage() {
                 label={isVi ? 'Mã truy cập bàn giao' : 'Handover Access Code'}
                 value={claimAccessCode}
                 onChange={(e) => setClaimAccessCode(e.target.value)}
-                placeholder="HC-20261022-XXXX-HANDOVER-SECURE"
+                placeholder="HC-20261115-XXXX-8F3K9A2B"
                 hint={
                   isVi
-                    ? 'Mã truy cập do Người thực thi (Executor) cung cấp.'
-                    : 'Access code provided by the case executor.'
+                    ? 'Nhập mã truy cập bảo mật đã được gửi tới Email của bạn sau khi Người thi hành phát hành bàn giao.'
+                    : 'Enter the secure access code sent to your email after the Executor initiates handover.'
                 }
                 disabled={claimLoading}
                 required

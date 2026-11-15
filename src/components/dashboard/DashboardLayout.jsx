@@ -5,7 +5,6 @@ import Button from '../Button.jsx'
 import Icon from '../Icon.jsx'
 import LanguageSwitcher from '../LanguageSwitcher.jsx'
 import ThemeToggle from '../ThemeToggle.jsx'
-import { NotificationBell } from '../notifications/NotificationParts.jsx'
 import WelcomeTour from '../onboarding/WelcomeTour.jsx'
 import { useAuth } from '../../auth/AuthContext.jsx'
 import { ROLES, getDashboardPath, normalizeRole } from '../../auth/roles.js'
@@ -254,7 +253,6 @@ export default function DashboardLayout({ children, showThemeToggle = true, side
         role={currentRole}
         storageKey={user?.id ? `${user.id}:${currentRole}` : currentRole}
       />
-      <NotificationBell />
       {showThemeToggle && <ThemeToggle />}
       <LanguageSwitcher label={t.languageLabel} />
     </>

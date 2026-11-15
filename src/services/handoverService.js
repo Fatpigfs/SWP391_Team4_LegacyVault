@@ -406,6 +406,20 @@ export const startHandover = async (user, caseId) => {
   return startHandoverReleaseApi(caseId)
 }
 
+function mapBeneficiaryHandoverStatus(rawStatus) {
+  const normalized = String(rawStatus || 'BENEFICIARY_VERIFICATION_PENDING').toUpperCase()
+  if (normalized === 'IN PROGRESS' || normalized === 'HANDOVER_IN_PROGRESS' || normalized === 'HANDOVER_INITIATED') {
+    return 'BENEFICIARY_VERIFICATION_PENDING'
+  }
+  if (normalized === 'INITIATED' || normalized === 'PENDING' || normalized === 'SUBMITTED' || normalized === 'UNDER_REVIEW') {
+    return 'PENDING_LEGAL_APPROVAL'
+  }
+  if (normalized === 'RELEASED') {
+    return 'READY_FOR_ACCESS'
+  }
+  return normalized
+}
+
 export const listBeneficiaryCases = async (user) => {
   if (isDemoMode()) return mockListBeneficiaryCases(user)
 
@@ -435,13 +449,7 @@ export const listBeneficiaryCases = async (user) => {
           c.beneficiary ||
           ''
 
-        const rawStatus = d.handover_status || c.handover_status || 'BENEFICIARY_VERIFICATION_PENDING'
-        let mappedStatus = rawStatus
-        if (rawStatus === 'IN PROGRESS' || rawStatus === 'APPROVED') {
-          mappedStatus = 'BENEFICIARY_VERIFICATION_PENDING'
-        } else if (rawStatus === 'RELEASED') {
-          mappedStatus = 'READY_FOR_ACCESS'
-        }
+        const mappedStatus = mapBeneficiaryHandoverStatus(d.handover_status || c.handover_status)
 
         const rawAssets = d.authorized_assets || d.authorized_collections_and_assets || []
         result.push({
@@ -506,13 +514,7 @@ export const getBeneficiaryCase = async (user, caseId) => {
   if (isDemoMode()) return mockGetBeneficiaryCase(user, caseId)
   const d = await getHandoverDetailsApi(caseId)
   const caseNum = d.case_number || caseId
-  const rawStatus = d.handover_status || d.status || 'BENEFICIARY_VERIFICATION_PENDING'
-  let mappedStatus = rawStatus
-  if (rawStatus === 'IN PROGRESS' || rawStatus === 'APPROVED') {
-    mappedStatus = 'BENEFICIARY_VERIFICATION_PENDING'
-  } else if (rawStatus === 'RELEASED') {
-    mappedStatus = 'READY_FOR_ACCESS'
-  }
+  const mappedStatus = mapBeneficiaryHandoverStatus(d.handover_status || d.status)
 
   const isAccessReady = mappedStatus === 'READY_FOR_ACCESS' || mappedStatus === 'RECEIPT_PENDING' || mappedStatus === 'COMPLETED'
   const isVerified = isAccessReady || mappedStatus === 'IDENTITY_VERIFIED' || mappedStatus === 'AUTHORIZATION_CHECKED'
@@ -588,9 +590,14 @@ export const getBeneficiaryCase = async (user, caseId) => {
 
 export const verifyIdentity = async (user, caseId, form) => {
   if (isDemoMode()) return mockVerifyIdentity(user, caseId, form)
+  let sessionToken = form?.sessionToken || form?.session_token || null
+  if (!sessionToken && typeof sessionStorage !== 'undefined' && caseId) {
+    sessionToken = sessionStorage.getItem('claim_session_token_' + caseId)
+  }
   await verifyBeneficiaryOtpApi({
     otpCode: form?.otp || form?.otp_code,
     caseRef: caseId,
+    sessionToken,
   })
   const current = await getBeneficiaryCase(user, caseId)
   return {

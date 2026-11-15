@@ -35,16 +35,15 @@ export default function ExecutorHandoverPage() {
     setFeedback(null)
     try {
       const res = await startHandover(user, handover.id)
-      const accessCode = res?.access_code || res?.accessCode
+      const notifiedTo = res?.notification_sent_to || res?.notificationSentTo
       setFeedback({
         tone: 'success',
-        text: accessCode
+        text: notifiedTo
           ? (language === 'vi'
-            ? `Bàn giao đã phát hành thành công! Hãy gửi mã truy cập bên dưới cho người thụ hưởng.`
-            : `Handover released successfully! Provide the access code below to the beneficiary.`)
+            ? `Đã phát hành bàn giao và gửi mã truy cập bảo mật qua email tới: ${notifiedTo}`
+            : `Handover released and secure access code sent via email to: ${notifiedTo}`)
           : t.executor.started(handover.id),
         caseId: handover.id,
-        accessCode,
       })
       reload()
     } catch (err) {
@@ -122,7 +121,11 @@ export default function ExecutorHandoverPage() {
 
       {confirming && (
         <ConfirmDialog
-          title={language === 'vi' ? 'Xác nhận bàn giao' : 'Confirm Handover'}
+          title={
+            hasReached(confirming.status, HANDOVER_STATUS.HANDOVER_INITIATED)
+              ? (language === 'vi' ? 'Gửi lại mã truy cập qua Email' : 'Resend Access Code via Email')
+              : (language === 'vi' ? 'Xác nhận bàn giao' : 'Confirm Handover')
+          }
           busy={Boolean(busyId)}
           onClose={() => setConfirming(null)}
           actions={
@@ -137,9 +140,13 @@ export default function ExecutorHandoverPage() {
           }
         >
           <p className="page-text" style={{ marginBottom: '14px' }}>
-            {language === 'vi'
-              ? 'Sau khi xác nhận, hệ thống sẽ gửi email thông báo đến người thụ hưởng.'
-              : 'After confirming, an email will be sent to the beneficiary.'}
+            {hasReached(confirming.status, HANDOVER_STATUS.HANDOVER_INITIATED)
+              ? (language === 'vi'
+                ? 'Hệ thống sẽ cấp mã truy cập bảo mật mới và gửi lại qua email cho người thụ hưởng.'
+                : 'A new secure access code will be generated and sent via email to the beneficiary.')
+              : (language === 'vi'
+                ? 'Sau khi xác nhận, hệ thống sẽ tạo mã truy cập bảo mật riêng và gửi email thông báo đến người thụ hưởng.'
+                : 'After confirming, a unique secure access code will be generated and emailed to the beneficiary.')}
           </p>
           <div style={{
             background: 'var(--color-surface-hover, #f8fafc)',
@@ -221,7 +228,11 @@ function ExecutorCaseCard({ handover, t, language, busy, feedback, onStart }) {
             }}
           >
             <Icon name="arrowRight" size={15} />
-            {busy ? (t.executor?.starting || 'Starting...') : (t.executor?.handoverBtn || (language === 'vi' ? 'Bàn giao' : 'Handover'))}
+            {busy
+              ? (t.executor?.starting || 'Starting...')
+              : started
+                ? (language === 'vi' ? 'Gửi lại mã qua Email' : 'Resend Code via Email')
+                : (t.executor?.handoverBtn || (language === 'vi' ? 'Bàn giao' : 'Handover'))}
           </Button>
         )}
       </header>
@@ -281,39 +292,6 @@ function ExecutorCaseCard({ handover, t, language, busy, feedback, onStart }) {
       {feedback && (
         <div style={{ display: 'grid', gap: '8px', margin: '8px 0' }}>
           <FormAlert tone={feedback.tone}>{feedback.text}</FormAlert>
-          {feedback.accessCode && (
-            <div
-              style={{
-                background: 'var(--color-surface, #fff)',
-                border: '1px solid var(--color-primary, #2563eb)',
-                padding: '12px 14px',
-                borderRadius: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px',
-              }}
-            >
-              <div>
-                <small style={{ color: 'var(--color-text-muted, #666)', display: 'block', fontSize: '0.75rem', fontWeight: 600 }}>
-                  MÃ TRUY CẬP (ACCESS CODE):
-                </small>
-                <code style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-primary, #2563eb)', wordBreak: 'break-all' }}>
-                  {feedback.accessCode}
-                </code>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  navigator.clipboard?.writeText(feedback.accessCode)
-                  alert('Đã sao chép mã truy cập!')
-                }}
-              >
-                Sao chép
-              </Button>
-            </div>
-          )}
         </div>
       )}
 

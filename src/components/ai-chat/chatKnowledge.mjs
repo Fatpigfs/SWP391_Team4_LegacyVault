@@ -3,7 +3,7 @@
 export const chatCopy = {
   vi: {
     heading: 'Trợ lý LegacyVault',
-    subtitleDemo: 'Hướng dẫn sử dụng · Bản demo',
+    subtitleDemo: 'Hướng dẫn sử dụng',
     subtitleApi: 'Hỗ trợ qua AI',
     open: 'Mở trợ lý LegacyVault',
     close: 'Đóng cửa sổ chat',
@@ -37,7 +37,7 @@ export const chatCopy = {
   },
   en: {
     heading: 'LegacyVault Assistant',
-    subtitleDemo: 'Product guidance · Demo',
+    subtitleDemo: 'Product guidance',
     subtitleApi: 'AI-powered assistance',
     open: 'Open LegacyVault assistant',
     close: 'Close chat window',
