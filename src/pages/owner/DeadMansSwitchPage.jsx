@@ -10,7 +10,6 @@ import {
   Zap,
   Clock3,
   ShieldCheck,
-  Wrench,
   Circle,
 } from 'lucide-react'
 import Button from '../../components/Button.jsx'
@@ -88,9 +87,9 @@ export default function DeadMansSwitchPage() {
   const [clock, setClock] = useState(() => Date.now())
   const [simulatedOffsetMs, setSimulatedOffsetMs] = useState(0) // for presentation testing
 
-  // Form states for config in seconds (matching backend schema: 60s interval, 120s grace default)
+  // Form states for config in seconds (matching backend schema: 60s interval, 60s grace default)
   const [formInterval, setFormInterval] = useState(60)
-  const [formGrace, setFormGrace] = useState(120)
+  const [formGrace, setFormGrace] = useState(60)
   const [isEditingConfig, setIsEditingConfig] = useState(false)
 
   // Live timer tick every 1 second
@@ -156,9 +155,9 @@ export default function DeadMansSwitchPage() {
       const statusData = await getDmsStatusApi()
       setDmsData(statusData)
       const rawIntervalSec = Number(statusData?.checkInIntervalSeconds ?? statusData?.checkInIntervalDays ?? 60)
-      const rawGraceSec = Number(statusData?.gracePeriodSeconds ?? statusData?.gracePeriodDays ?? 120)
+      const rawGraceSec = Number(statusData?.gracePeriodSeconds ?? statusData?.gracePeriodDays ?? 60)
       setFormInterval(rawIntervalSec > 0 ? rawIntervalSec : 60)
-      setFormGrace(rawGraceSec >= 0 ? rawGraceSec : 120)
+      setFormGrace(rawGraceSec >= 0 ? rawGraceSec : 60)
 
       // 2. GET /api/v1/dms/audit-logs
       try {
@@ -242,7 +241,7 @@ export default function DeadMansSwitchPage() {
         const nextInterval = Number(res.config.checkInIntervalSeconds ?? res.config.checkInIntervalDays ?? formInterval)
         const nextGrace = Number(res.config.gracePeriodSeconds ?? res.config.gracePeriodDays ?? formGrace)
         setFormInterval(nextInterval > 0 ? nextInterval : 60)
-        setFormGrace(nextGrace >= 0 ? nextGrace : 120)
+        setFormGrace(nextGrace >= 0 ? nextGrace : 60)
       } else {
         const updatedStatus = await getDmsStatusApi()
         setDmsData(updatedStatus)
@@ -524,7 +523,7 @@ export default function DeadMansSwitchPage() {
                   onChange={(e) => setFormGrace(Number(e.target.value))}
                 >
                   <optgroup label={isVi ? 'Chế độ kiểm thử / Thử nghiệm nhanh' : 'Quick Demo / Testing Mode'}>
-                    <option value={120}>{isVi ? '2 Phút (120s) — Mặc định kiểm thử' : '2 Minutes (120s) — Test Default'}</option>
+                    <option value={60}>{isVi ? '1 Phút (60s) — Mặc định kiểm thử' : '1 Minute (60s) — Test Default'}</option>
                   </optgroup>
                   <optgroup label={isVi ? 'Theo Giờ' : 'Hourly Schedule'}>
                     <option value={3600}>{isVi ? '1 Giờ (3,600s)' : '1 Hour (3,600s)'}</option>
@@ -824,64 +823,11 @@ export default function DeadMansSwitchPage() {
               <div style={{ marginTop: 24 }}>
                 <Button variant="secondary" onClick={handleCheckIn} disabled={syncing}>
                   <RotateCcw size={16} />
-                  {isVi ? 'Khôi phục lại két (Reset Demo)' : 'Reset Demo State'}
+                  {isVi ? 'Khôi phục lại két (Reset State)' : 'Reset State'}
                 </Button>
               </div>
             </section>
           )}
-
-          {/* Presentation demo simulator: folded away so it does not read as part of the product. */}
-          <details className="sim-tools">
-            <summary>
-              <Wrench size={15} strokeWidth={1.9} aria-hidden="true" style={{ marginRight: 6, verticalAlign: 'middle' }} />
-              {isVi ? 'Công cụ mô phỏng (demo)' : 'Demo simulator'}
-            </summary>
-            <div className="sim-bar">
-              <button
-                type="button"
-                onClick={() => {
-                  setSimulatedOffsetMs(0)
-                }}
-              >
-                {isVi ? '1. Trạng thái bình thường (Active)' : '1. Normal Active'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const threshold = intervalSeconds < 180 ? 10 : Math.min(3 * 86400, intervalSeconds / 3)
-                  const offsetSec = Math.max(0, intervalSeconds - (threshold / 2))
-                  setSimulatedOffsetMs(offsetSec * 1000)
-                }}
-              >
-                {isVi ? '2. Sắp đến hạn (Due Soon)' : '2. Due Soon'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const extraSec = graceSeconds < 180 ? 5 : Math.min(86400, graceSeconds / 3)
-                  setSimulatedOffsetMs((intervalSeconds + extraSec) * 1000)
-                }}
-              >
-                {isVi ? '3. Đang ân hạn (Grace Warning)' : '3. Grace Period Warning'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSimulatedOffsetMs((intervalSeconds + graceSeconds + 5) * 1000)
-                }}
-              >
-                {isVi ? '4. Kích hoạt chuyển giao (Triggered)' : '4. Triggered Handover'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsEditingConfig(true)
-                }}
-              >
-                {isVi ? 'Cấu hình lại' : 'Re-configure'}
-              </button>
-            </div>
-          </details>
         </>
       )}
     </OwnerLayout>

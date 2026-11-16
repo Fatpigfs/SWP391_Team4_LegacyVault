@@ -40,6 +40,9 @@ export default function RegisterPage() {
   const handleSubmit = async (event) => {
     event.preventDefault()
     setServerError(null)
+    if (!form.values.terms) {
+      return
+    }
 
     const fullName = form.values.fullName?.trim()
     const email = form.values.identifier?.trim()
@@ -217,7 +220,7 @@ export default function RegisterPage() {
           )}
         </div>
 
-        <SubmitButton loading={loading} loadingText={copy.submitting}>
+        <SubmitButton loading={loading} loadingText={copy.submitting} disabled={!form.values.terms}>
           {copy.submit}
         </SubmitButton>
       </form>

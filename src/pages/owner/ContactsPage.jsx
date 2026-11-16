@@ -30,6 +30,7 @@ import {
   revokeContactInvitationApi,
   updateContactApi,
 } from '../../services/contactService.js'
+import { getAssignmentsListApi } from '../../services/assignmentService.js'
 
 export default function ContactsPage() {
   const { language } = useLanguage()
@@ -53,6 +54,8 @@ export default function ContactsPage() {
   const [confirmAction, setConfirmAction] = useState(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [openMenu, setOpenMenu] = useState(null)
+  const [assignedContactIds, setAssignedContactIds] = useState(() => new Set())
+  const [assignedContactEmails, setAssignedContactEmails] = useState(() => new Set())
   const menuRef = useRef(null)
 
   const [form, setForm] = useState({
@@ -75,11 +78,37 @@ export default function ContactsPage() {
       setError(null)
 
       try {
-        const list = await getContactsApi({
-          keyword,
-          expectedRole: roleFilter !== 'ALL' ? roleFilter : '',
-          status: statusFilter !== 'ALL' ? statusFilter : '',
-        })
+        const [list, assignmentsList] = await Promise.all([
+          getContactsApi({
+            keyword,
+            expectedRole: roleFilter !== 'ALL' ? roleFilter : '',
+            status: statusFilter !== 'ALL' ? statusFilter : '',
+          }),
+          getAssignmentsListApi().catch(() => []),
+        ])
+
+        const nextAssignedIds = new Set()
+        const nextAssignedEmails = new Set()
+        if (Array.isArray(assignmentsList)) {
+          for (const assignment of assignmentsList) {
+            if (assignment?.executorContactId) {
+              nextAssignedIds.add(assignment.executorContactId)
+            }
+            if (assignment?.executorEmail) {
+              nextAssignedEmails.add(assignment.executorEmail.trim().toLowerCase())
+            }
+            for (const beneficiary of assignment?.beneficiaries || []) {
+              const bId = beneficiary?.contactId || beneficiary?.id
+              if (bId) nextAssignedIds.add(bId)
+              if (beneficiary?.email) {
+                nextAssignedEmails.add(beneficiary.email.trim().toLowerCase())
+              }
+            }
+          }
+        }
+        setAssignedContactIds(nextAssignedIds)
+        setAssignedContactEmails(nextAssignedEmails)
+
         if (Array.isArray(list)) {
           const mapped = list.map((c) => {
             const isBoth =
@@ -180,8 +209,20 @@ export default function ContactsPage() {
     }
   }, [openMenu])
 
+  const isContactInAssignment = (contact) => {
+    const cId = contact?.contactId || contact?.id
+    const email = (contact?.email || '').trim().toLowerCase()
+    return Boolean(
+      (cId && assignedContactIds.has(cId)) ||
+        (email && assignedContactEmails.has(email)),
+    )
+  }
+
   const handleToggleMenu = (event, contact) => {
     event.stopPropagation()
+    if (isContactInAssignment(contact)) {
+      return
+    }
     const targetId = contact.contactId || contact.id
     if (openMenu && (openMenu.contact.contactId || openMenu.contact.id) === targetId) {
       setOpenMenu(null)
@@ -537,7 +578,6 @@ export default function ContactsPage() {
             <option value="verified">{isVi ? 'Đã xác thực' : 'Verified'}</option>
             <option value="pending">{isVi ? 'Chờ xác nhận' : 'Pending'}</option>
             <option value="revoked">{isVi ? 'Đã thu hồi' : 'Revoked'}</option>
-            <option value="rejected">{isVi ? 'Đã từ chối' : 'Declined'}</option>
           </select>
         </div>
 
@@ -620,8 +660,17 @@ export default function ContactsPage() {
                   const isExec = !isBoth && (c.isExecutor || c.role === 'Executor')
                   const isVerified = c.status === 'verified'
                   const isRejected = c.status === 'rejected'
+                  const isAssignedInAssignment = isContactInAssignment(c)
+                  const lockTooltip = isVi
+                    ? 'Liên hệ này đang có trong Assignment. Vui lòng xóa Assignment đó trước khi thao tác.'
+                    : 'This contact is currently in an active Assignment. Please delete that Assignment first.'
+                  const lockedStyle = isAssignedInAssignment
+                    ? { opacity: 0.45, cursor: 'not-allowed' }
+                    : undefined
                   const isMenuOpen =
-                    openMenu && (openMenu.contact.contactId || openMenu.contact.id) === contactId
+                    !isAssignedInAssignment &&
+                    openMenu &&
+                    (openMenu.contact.contactId || openMenu.contact.id) === contactId
 
                   return (
                     <tr key={contactId}>
@@ -679,10 +728,15 @@ export default function ContactsPage() {
                             <button
                               type="button"
                               className="contact-primary-btn contact-primary-btn--edit"
-                              disabled={actionLoading}
+                              disabled={actionLoading || isAssignedInAssignment}
+                              style={lockedStyle}
                               onClick={() => openEditModal(c)}
                               title={
-                                isVi ? 'Chỉnh sửa thông tin hoặc vai trò' : 'Edit contact or role'
+                                isAssignedInAssignment
+                                  ? lockTooltip
+                                  : isVi
+                                  ? 'Chỉnh sửa thông tin hoặc vai trò'
+                                  : 'Edit contact or role'
                               }
                             >
                               <Edit2 size={13} />
@@ -692,12 +746,19 @@ export default function ContactsPage() {
                             <button
                               type="button"
                               className="contact-primary-btn contact-primary-btn--resend"
-                              disabled={actionLoading}
+                              disabled={actionLoading || isAssignedInAssignment}
+                              style={lockedStyle}
                               onClick={() => {
                                 setOpenMenu(null)
                                 handleResendInvite(c)
                               }}
-                              title={isVi ? 'Gửi lại email lời mời' : 'Resend invitation email'}
+                              title={
+                                isAssignedInAssignment
+                                  ? lockTooltip
+                                  : isVi
+                                  ? 'Gửi lại email lời mời'
+                                  : 'Resend invitation email'
+                              }
                             >
                               <Mail size={13} />
                               {isVi ? 'Gửi lại' : 'Resend'}
@@ -707,12 +768,13 @@ export default function ContactsPage() {
                           <button
                             type="button"
                             className={`contact-more-btn${isMenuOpen ? ' is-open' : ''}`}
-                            disabled={actionLoading}
+                            disabled={actionLoading || isAssignedInAssignment}
+                            style={lockedStyle}
                             onClick={(e) => handleToggleMenu(e, c)}
                             aria-haspopup="menu"
                             aria-expanded={Boolean(isMenuOpen)}
-                            aria-label={isVi ? 'Thêm thao tác' : 'More actions'}
-                            title={isVi ? 'Thêm thao tác' : 'More actions'}
+                            aria-label={isAssignedInAssignment ? lockTooltip : isVi ? 'Thêm thao tác' : 'More actions'}
+                            title={isAssignedInAssignment ? lockTooltip : isVi ? 'Thêm thao tác' : 'More actions'}
                           >
                             <MoreVertical size={15} />
                           </button>

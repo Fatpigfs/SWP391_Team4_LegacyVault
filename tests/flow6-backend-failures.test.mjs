@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { setAuthToken, setDemoMode } from '../src/services/apiClient.js'
 import {
   confirmReceipt,
+  listBeneficiaryCases,
   openAsset,
   recordAssetDownload,
   runAuthorizationCheck,
@@ -92,6 +93,58 @@ test('openAsset: returns the content from the backend and moves to RECEIPT_PENDI
 test('recordAssetDownload: a refused acknowledge blocks the download', async () => {
   routes.push(['/acknowledge', () => json(403, { message: 'denied' })])
   await assert.rejects(recordAssetDownload(user, CASE_ID, ASSET_ID), /denied/)
+})
+
+test('listBeneficiaryCases: uses beneficiary dashboard and aggregates multi-owner cases even for secondary beneficiary', async () => {
+  routes.unshift(
+    ['/handover/beneficiary/dashboard', () => json(200, {
+      cases: [
+        {
+          case_id: 'case-1',
+          case_number: 'HC-1',
+          vault_owner: 'Owner A',
+          beneficiary: 'Other Beneficiary, Real User',
+          beneficiaries: [
+            { name: 'Other Beneficiary', email: 'other@example.test' },
+            { name: 'Real User', email: 'real@example.test' },
+          ],
+          handover_status: 'IN PROGRESS',
+        },
+        {
+          case_id: 'case-2',
+          case_number: 'HC-2',
+          vault_owner: 'Owner B',
+          beneficiary: 'Real User',
+          beneficiaries: [{ name: 'Real User', email: 'real@example.test' }],
+          handover_status: 'RELEASED',
+        },
+      ],
+    })],
+    ['/cases/case-1/details', () => json(200, {
+      case_number: 'HC-1',
+      handover_status: 'IN PROGRESS',
+      vault_owner: { name: 'Owner A' },
+      primary_beneficiary: { name: 'Other Beneficiary', email: 'other@example.test' },
+      authorized_assets: [{ asset_id: 'asset-1', asset_name: 'Asset 1' }],
+    })],
+    ['/cases/case-2/details', () => json(200, {
+      case_number: 'HC-2',
+      handover_status: 'RELEASED',
+      vault_owner: { name: 'Owner B' },
+      primary_beneficiary: { name: 'Real User', email: 'real@example.test' },
+      authorized_assets: [{ asset_id: 'asset-2', asset_name: 'Asset 2' }],
+    })],
+  )
+
+  const cases = await listBeneficiaryCases(user)
+
+  assert.ok(calls.some((url) => url.includes('/handover/beneficiary/dashboard')))
+  assert.ok(!calls.some((url) => url.includes('/handover/executor/dashboard')))
+  assert.deepEqual(cases.map((c) => c.id), ['HC-1', 'HC-2'])
+  assert.equal(cases[0].vault.ownerName, 'Owner A')
+  assert.equal(cases[0].beneficiary.email, 'real@example.test')
+  assert.equal(cases[1].vault.ownerName, 'Owner B')
+  assert.equal(cases[1].status, 'READY_FOR_ACCESS')
 })
 
 // adminService and auditService fix their demo flag on import; outside a browser it is true.

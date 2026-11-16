@@ -1,11 +1,16 @@
 import { apiFetch } from './apiClient.js'
 
-export function getBeneficiaryFaceEnrollmentApi() {
-  return apiFetch('/handover/beneficiary/face/enrollment')
+function enrollmentUrl(caseRef) {
+  if (!caseRef) return '/handover/beneficiary/face/enrollment'
+  return `/handover/beneficiary/face/enrollment?case_ref=${encodeURIComponent(caseRef)}`
 }
 
-export function enrollBeneficiaryFaceApi(payload) {
-  return apiFetch('/handover/beneficiary/face/enrollment', {
+export function getBeneficiaryFaceEnrollmentApi(caseRef) {
+  return apiFetch(enrollmentUrl(caseRef))
+}
+
+export function enrollBeneficiaryFaceApi(payload, caseRef) {
+  return apiFetch(enrollmentUrl(caseRef), {
     method: 'PUT',
     body: payload,
   })

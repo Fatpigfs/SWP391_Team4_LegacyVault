@@ -5,7 +5,6 @@ import Button from '../Button.jsx'
 import Icon from '../Icon.jsx'
 import LanguageSwitcher from '../LanguageSwitcher.jsx'
 import ThemeToggle from '../ThemeToggle.jsx'
-import { NotificationBell } from '../notifications/NotificationParts.jsx'
 import WelcomeTour from '../onboarding/WelcomeTour.jsx'
 import { useAuth } from '../../auth/AuthContext.jsx'
 import { ROLES, getDashboardPath, normalizeRole } from '../../auth/roles.js'
@@ -134,71 +133,33 @@ export default function DashboardLayout({ children, showThemeToggle = true, side
       })
     }
 
-    // 4. Executor contexts (ONLY if user is actually assigned as an executor for someone)
+    // 4. Executor Dashboard (shown once when assigned as an executor by at least one vault owner)
     const executorContexts = rawList.filter(
       (c) => normalizeRole(c.role || c.roleCode) === ROLES.EXECUTOR
     )
-    executorContexts.forEach((ctx, idx) => {
-      const ownerName = ctx.ownerFullName || ctx.vaultOwnerName
-      items.push({
-        key: ctx.contactId ? `EXECUTOR_${ctx.contactId}` : `EXECUTOR_${ctx.ownerId || idx}`,
-        role: ROLES.EXECUTOR,
-        roleCode: ROLES.EXECUTOR,
-        title: 'Executor Dashboard',
-        subtitle: ctx.subtitle || (ownerName ? `Executor for ${ownerName}` : null),
-        icon: 'clipboardCheck',
-        ownerId: ctx.ownerId || ctx.vaultOwnerId || null,
-        ownerFullName: ownerName || null,
-        contactId: ctx.contactId || null,
-      })
-    })
-
-    // If current active role is EXECUTOR but rawList didn't provide executor context, keep current session context
-    if (currentPrimaryRole === ROLES.EXECUTOR && executorContexts.length === 0) {
+    if (executorContexts.length > 0 || currentPrimaryRole === ROLES.EXECUTOR) {
       items.push({
         key: 'EXECUTOR',
         role: ROLES.EXECUTOR,
         roleCode: ROLES.EXECUTOR,
         title: 'Executor Dashboard',
-        subtitle: user?.activeContext?.subtitle || null,
+        subtitle: null,
         icon: 'clipboardCheck',
-        ownerId: user?.activeContext?.ownerId || null,
-        ownerFullName: user?.activeContext?.ownerFullName || null,
-        contactId: user?.activeContext?.contactId || null,
       })
     }
 
-    // 5. Beneficiary contexts (ONLY if user is actually assigned as a beneficiary for someone)
+    // 5. Beneficiary Dashboard (shown once when assigned as a beneficiary by at least one vault owner)
     const beneficiaryContexts = rawList.filter(
       (c) => normalizeRole(c.role || c.roleCode) === ROLES.BENEFICIARY
     )
-    beneficiaryContexts.forEach((ctx, idx) => {
-      const ownerName = ctx.ownerFullName || ctx.vaultOwnerName
-      items.push({
-        key: ctx.contactId ? `BENEFICIARY_${ctx.contactId}` : `BENEFICIARY_${ctx.ownerId || idx}`,
-        role: ROLES.BENEFICIARY,
-        roleCode: ROLES.BENEFICIARY,
-        title: 'Beneficiary Dashboard',
-        subtitle: ctx.subtitle || (ownerName ? `Beneficiary for ${ownerName}` : null),
-        icon: 'gift',
-        ownerId: ctx.ownerId || ctx.vaultOwnerId || null,
-        ownerFullName: ownerName || null,
-        contactId: ctx.contactId || null,
-      })
-    })
-
-    // If current active role is BENEFICIARY but rawList didn't provide beneficiary context, keep current session context
-    if (currentPrimaryRole === ROLES.BENEFICIARY && beneficiaryContexts.length === 0) {
+    if (beneficiaryContexts.length > 0 || currentPrimaryRole === ROLES.BENEFICIARY) {
       items.push({
         key: 'BENEFICIARY',
         role: ROLES.BENEFICIARY,
         roleCode: ROLES.BENEFICIARY,
         title: 'Beneficiary Dashboard',
-        subtitle: user?.activeContext?.subtitle || null,
+        subtitle: null,
         icon: 'gift',
-        ownerId: user?.activeContext?.ownerId || null,
-        ownerFullName: user?.activeContext?.ownerFullName || null,
-        contactId: user?.activeContext?.contactId || null,
       })
     }
 
@@ -292,7 +253,6 @@ export default function DashboardLayout({ children, showThemeToggle = true, side
         role={currentRole}
         storageKey={user?.id ? `${user.id}:${currentRole}` : currentRole}
       />
-      <NotificationBell />
       {showThemeToggle && <ThemeToggle />}
       <LanguageSwitcher label={t.languageLabel} />
     </>

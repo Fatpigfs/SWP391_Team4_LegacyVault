@@ -105,7 +105,7 @@ export default function BeneficiaryFaceVerification({ caseRef, copy, onVerificat
     let active = true
 
     Promise.all([
-      getBeneficiaryFaceEnrollmentApi(),
+      getBeneficiaryFaceEnrollmentApi(caseRef),
       getBeneficiaryKycStatusApi(caseRef),
     ]).then(([enrollment, kyc]) => {
       if (!active) return
@@ -247,6 +247,13 @@ export default function BeneficiaryFaceVerification({ caseRef, copy, onVerificat
       challengeRef.current = null
       setChallenge(null)
       setBusy(false)
+      if (error?.status === 409) {
+        setEnrolled(false)
+        setMode('enroll')
+        setFailure('')
+        setMessage(copy.enrollmentIntro)
+        return
+      }
       setFailure(error?.message || copy.sessionFailure)
       setMessage('')
     }
@@ -315,7 +322,7 @@ export default function BeneficiaryFaceVerification({ caseRef, copy, onVerificat
         const response = await enrollBeneficiaryFaceApi({
           consent: true,
           embedding,
-        })
+        }, caseRef)
         if (!response?.enrolled) throw new Error(copy.enrollmentFailure)
         setEnrolled(true)
         setMode('verify')

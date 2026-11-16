@@ -39,15 +39,15 @@ const en = {
   events: {
     HANDOVER_INITIATED: 'Executor started the handover',
     BENEFICIARY_IDENTIFIED: 'Beneficiary identified',
-    BENEFICIARY_NOTIFIED: 'Beneficiary notified (in-app, demo)',
+    BENEFICIARY_NOTIFIED: 'Beneficiary notified',
     VERIFICATION_FAILED: 'Identity verification failed',
-    IDENTITY_VERIFIED: 'Identity verified (demo)',
+    IDENTITY_VERIFIED: 'Identity verified',
     AUTHORIZATION_FAILED: 'Authorization check failed',
     AUTHORIZATION_CHECKED: 'Authorization and asset permissions checked',
     READY_FOR_ACCESS: 'Authorized assets unlocked',
-    ASSET_ACCESSED: 'Beneficiary opened an asset',
+    ASSET_ACCESSED: 'Access assets — Beneficiary opened an asset',
     RECEIPT_PENDING: 'Waiting for receipt confirmation',
-    COMPLETED: 'Beneficiary confirmed receipt',
+    COMPLETED: 'Confirm receipt — Beneficiary confirmed receipt',
   },
 
   executor: {
@@ -299,15 +299,15 @@ const vi = {
   events: {
     HANDOVER_INITIATED: 'Người thực thi bắt đầu bàn giao',
     BENEFICIARY_IDENTIFIED: 'Đã xác định người thụ hưởng',
-    BENEFICIARY_NOTIFIED: 'Đã thông báo người thụ hưởng (trong ứng dụng, demo)',
+    BENEFICIARY_NOTIFIED: 'Đã thông báo người thụ hưởng',
     VERIFICATION_FAILED: 'Xác minh danh tính thất bại',
-    IDENTITY_VERIFIED: 'Đã xác minh danh tính (demo)',
+    IDENTITY_VERIFIED: 'Đã xác minh danh tính',
     AUTHORIZATION_FAILED: 'Kiểm tra quyền thất bại',
     AUTHORIZATION_CHECKED: 'Đã kiểm tra quyền và quyền tài sản',
     READY_FOR_ACCESS: 'Đã mở khóa tài sản được phép',
-    ASSET_ACCESSED: 'Người thụ hưởng đã mở một tài sản',
+    ASSET_ACCESSED: 'Truy cập tài sản (Access assets) — Đã mở tài sản',
     RECEIPT_PENDING: 'Chờ xác nhận đã nhận',
-    COMPLETED: 'Người thụ hưởng đã xác nhận nhận',
+    COMPLETED: 'Xác nhận đã nhận (Confirm receipt) — Đã hoàn tất',
   },
 
   executor: {

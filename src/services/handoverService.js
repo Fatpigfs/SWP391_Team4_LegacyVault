@@ -85,34 +85,47 @@ function adaptHandoverRow(row) {
 
 // ---------------- Flow 6: Executor APIs ----------------
 
+function buildDemoDashboardPayload(list, action) {
+  return {
+    metrics: {
+      total_handover_cases: list.length,
+      pending_approval: list.filter((c) => c.status === 'PENDING_LEGAL_APPROVAL').length,
+      in_progress: list.filter((c) => c.status === 'HANDOVER_INITIATED').length,
+      completed_releases: list.filter((c) => c.status === 'COMPLETED').length,
+    },
+    cases: list.map((c) => ({
+      case_id: c.id,
+      case_number: c.id,
+      vault_owner: c.vault?.owner?.name || c.vault?.ownerName || 'Vault Owner',
+      beneficiary: c.beneficiary?.name || 'Beneficiary',
+      legal_verification_status: c.legalStatus,
+      handover_status: c.status,
+      updated_date: 'Oct 24, 2026',
+      action,
+    })),
+  }
+}
+
 // 1. GET /handover/executor/dashboard
 export async function getExecutorHandoverDashboardApi() {
   if (isDemoMode()) {
     const list = await mockListExecutorCases()
-    return {
-      metrics: {
-        total_handover_cases: list.length,
-        pending_approval: list.filter((c) => c.status === 'PENDING_LEGAL_APPROVAL').length,
-        in_progress: list.filter((c) => c.status === 'HANDOVER_INITIATED').length,
-        completed_releases: list.filter((c) => c.status === 'COMPLETED').length,
-      },
-      cases: list.map((c) => ({
-        case_id: c.id,
-        case_number: c.id,
-        vault_owner: c.vault?.owner?.name || 'Vault Owner',
-        beneficiary: c.beneficiary?.name || 'Beneficiary',
-        legal_verification_status: c.legalStatus,
-        handover_status: c.status,
-        updated_date: 'Oct 24, 2026',
-        action: 'MANAGE_HANDOVER',
-      })),
-    }
+    return buildDemoDashboardPayload(list, 'MANAGE_HANDOVER')
   }
   return apiFetch('/handover/executor/dashboard')
 }
 
+// 1b. GET /handover/beneficiary/dashboard
+export async function getBeneficiaryHandoverDashboardApi(user = null) {
+  if (isDemoMode()) {
+    const list = await mockListBeneficiaryCases(user)
+    return buildDemoDashboardPayload(list, 'OPEN_CASE')
+  }
+  return apiFetch('/handover/beneficiary/dashboard')
+}
+
 // 2. GET /handover/cases/{caseId}/details
-export async function getHandoverDetailsApi(caseId) {
+export async function getHandoverDetailsApi(caseId, options = {}) {
   if (isDemoMode()) {
     const details = await mockGetBeneficiaryCase(null, caseId)
     return {
@@ -124,7 +137,11 @@ export async function getHandoverDetailsApi(caseId) {
       authorized_collections_and_assets: details.assets || [],
     }
   }
-  return apiFetch(`/handover/cases/${encodeURIComponent(caseId)}/details`)
+  const params = new URLSearchParams()
+  if (options?.forBeneficiary) params.set('for_beneficiary', 'true')
+  if (options?.beneficiaryEmail) params.set('beneficiary_email', options.beneficiaryEmail)
+  const query = params.toString()
+  return apiFetch(`/handover/cases/${encodeURIComponent(caseId)}/details${query ? `?${query}` : ''}`)
 }
 
 // 3. POST /handover/cases/{caseId}/start-release
@@ -393,66 +410,83 @@ export const startHandover = async (user, caseId) => {
   return startHandoverReleaseApi(caseId)
 }
 
+function mapBeneficiaryHandoverStatus(rawStatus) {
+  const normalized = String(rawStatus || 'BENEFICIARY_VERIFICATION_PENDING').toUpperCase()
+  if (normalized === 'IN PROGRESS' || normalized === 'HANDOVER_IN_PROGRESS' || normalized === 'HANDOVER_INITIATED') {
+    return 'BENEFICIARY_VERIFICATION_PENDING'
+  }
+  if (normalized === 'INITIATED' || normalized === 'PENDING' || normalized === 'SUBMITTED' || normalized === 'UNDER_REVIEW') {
+    return 'PENDING_LEGAL_APPROVAL'
+  }
+  if (normalized === 'RELEASED') {
+    return 'READY_FOR_ACCESS'
+  }
+  return normalized
+}
+
 export const listBeneficiaryCases = async (user) => {
   if (isDemoMode()) return mockListBeneficiaryCases(user)
 
   try {
-    const dash = await getExecutorHandoverDashboardApi()
+    const dash = await getBeneficiaryHandoverDashboardApi(user)
     const rawCases = Array.isArray(dash) ? dash : (dash?.cases || [])
+    const userEmail = (user?.identifier || user?.email || '').trim().toLowerCase()
 
     const result = []
     for (const c of rawCases) {
       try {
-        const d = await getHandoverDetailsApi(c.case_id || c.case_number)
-        const bEmail = d.primary_beneficiary?.email || ''
-        const bName = d.primary_beneficiary?.name || c.beneficiary || ''
-        const userPrefix = (user?.identifier || user?.email || '').split('@')[0].toLowerCase()
+        const d = await getHandoverDetailsApi(c.case_id || c.case_number, {
+          forBeneficiary: true,
+          beneficiaryEmail: userEmail,
+        })
+        const matchingBeneficiary = Array.isArray(c.beneficiaries)
+          ? c.beneficiaries.find((b) => (b?.email || '').trim().toLowerCase() === userEmail)
+          : null
 
-        // Match cases for this beneficiary if user email/name matches, or include if single active case
-        const isMatch = !userPrefix ||
-          bEmail.toLowerCase().includes(userPrefix) ||
-          bName.toLowerCase().includes(userPrefix) ||
-          (user?.fullName && bName.toLowerCase().includes(user.fullName.toLowerCase()))
+        const bEmail =
+          matchingBeneficiary?.email ||
+          user?.identifier ||
+          user?.email ||
+          d.primary_beneficiary?.email ||
+          ''
+        const bName =
+          matchingBeneficiary?.name ||
+          user?.fullName ||
+          d.primary_beneficiary?.name ||
+          c.beneficiary ||
+          ''
 
-        if (isMatch || rawCases.length === 1) {
-          const rawStatus = d.handover_status || c.handover_status || 'BENEFICIARY_VERIFICATION_PENDING'
-          let mappedStatus = rawStatus
-          if (rawStatus === 'IN PROGRESS' || rawStatus === 'APPROVED') {
-            mappedStatus = 'BENEFICIARY_VERIFICATION_PENDING'
-          } else if (rawStatus === 'RELEASED') {
-            mappedStatus = 'READY_FOR_ACCESS'
-          }
+        const mappedStatus = mapBeneficiaryHandoverStatus(d.handover_status || c.handover_status)
 
-          const rawAssets = d.authorized_assets || d.authorized_collections_and_assets || []
-          result.push({
-            id: c.case_number || c.case_id || d.case_number,
-            name: c.case_number || c.case_id,
-            status: mappedStatus,
-            vault: {
-              name: d.vault_owner?.vault_name || 'Kho di sản số (Digital Vault)',
-              ownerName: d.vault_owner?.name || c.vault_owner || '—',
-            },
-            beneficiary: {
-              userId: user?.id,
-              name: bName,
-              email: bEmail,
-            },
-            assets: rawAssets.map((a, idx) => ({
-              id: a.asset_id || a.id || `asset-${idx + 1}`,
-              name: a.asset_name || a.name || 'Tài sản số',
-              category: (a.category || a.asset_type || 'BANK_ACCOUNT').toUpperCase().replace(/\s+/g, '_'),
-              description: a.description || '',
-              forThisBeneficiary: true,
-              authorizedBeneficiaryIds: [user?.id].filter(Boolean),
-            })),
-          })
-        }
+        const rawAssets = d.authorized_assets || d.authorized_collections_and_assets || []
+        result.push({
+          id: c.case_number || c.case_id || d.case_number,
+          name: c.case_number || c.case_id,
+          status: mappedStatus,
+          vault: {
+            name: d.vault_owner?.vault_name || 'Kho di sản số (Digital Vault)',
+            ownerName: d.vault_owner?.name || c.vault_owner || '—',
+          },
+          beneficiary: {
+            userId: user?.id,
+            name: bName,
+            email: bEmail,
+          },
+          assets: rawAssets.map((a, idx) => ({
+            id: a.asset_id || a.id || `asset-${idx + 1}`,
+            name: a.asset_name || a.name || 'Tài sản số',
+            category: (a.category || a.asset_type || 'BANK_ACCOUNT').toUpperCase().replace(/\s+/g, '_'),
+            description: a.description || '',
+            forThisBeneficiary: true,
+            authorizedBeneficiaryIds: [user?.id].filter(Boolean),
+          })),
+        })
       } catch (err) {
         console.warn('Failed to load case detail for beneficiary list:', err)
       }
     }
 
-    if (result.length > 0) return result
+    return result
   } catch (e) {
     console.warn('Failed to fetch real beneficiary cases from dashboard, fallback to assets:', e)
   }
@@ -483,20 +517,154 @@ export const listBeneficiaryCases = async (user) => {
   }
 }
 
+function parseAttachmentDocuments(attachmentUrl, fallbackDocs = []) {
+  if (!attachmentUrl || typeof attachmentUrl !== 'string') {
+    return Array.isArray(fallbackDocs) ? fallbackDocs : []
+  }
+  const urls = attachmentUrl
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean)
+  if (urls.length === 0) {
+    return Array.isArray(fallbackDocs) ? fallbackDocs : []
+  }
+  return urls.map((rawUrl, index) => {
+    const resolvedUrl = rawUrl.startsWith('https://storage.legacyvault.com/docs/')
+      ? `/api/v1/assets/documents/${rawUrl.slice('https://storage.legacyvault.com/docs/'.length)}`
+      : rawUrl
+    let rawFileName = `Tài liệu đính kèm ${index + 1}`
+    try {
+      rawFileName = decodeURIComponent(
+        resolvedUrl.split('/').pop() || rawFileName,
+      )
+    } catch {
+      rawFileName = resolvedUrl.split('/').pop() || rawFileName
+    }
+    const uIdx = rawFileName.indexOf('_')
+    const cleanName =
+      uIdx === 36 && rawFileName.length > 37 ? rawFileName.slice(37) : rawFileName
+    return {
+      id: `doc-${index + 1}`,
+      name: cleanName,
+      size: 1024,
+      url: resolvedUrl,
+    }
+  })
+}
+
+const memoryTimelineStore = new Map()
+
+function getTimelineStorageKey(user, caseId) {
+  const userKey = (user?.identifier || user?.email || user?.id || 'default').trim().toLowerCase()
+  return `legacyvault_handover_timeline_${caseId}_${userKey}`
+}
+
+function loadStoredTimelineState(user, caseId) {
+  if (!caseId) return {}
+  const key = getTimelineStorageKey(user, caseId)
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(key)
+      if (raw) return JSON.parse(raw)
+    }
+  } catch {
+    // ignore
+  }
+  return memoryTimelineStore.get(key) || {}
+}
+
+function saveStoredTimelineState(user, caseId, patch) {
+  if (!caseId) return {}
+  const key = getTimelineStorageKey(user, caseId)
+  const next = { ...loadStoredTimelineState(user, caseId), ...patch }
+  memoryTimelineStore.set(key, next)
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(next))
+    }
+  } catch {
+    // ignore
+  }
+  return next
+}
+
+function mergeStoredTimelineStates(user, primaryId, secondaryId) {
+  const first = loadStoredTimelineState(user, primaryId)
+  if (!secondaryId || secondaryId === primaryId) return first
+  return { ...loadStoredTimelineState(user, secondaryId), ...first }
+}
+
+function ensureTimelineEvent(events, type, at) {
+  const list = Array.isArray(events) ? [...events] : []
+  const idx = list.findIndex((event) => event.type === type)
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], at }
+    return list
+  }
+  return [...list, { type, at }]
+}
+
+function buildBeneficiaryTimeline({
+  initiatedAt,
+  isVerified,
+  isAccessReady,
+  mappedStatus,
+  verifiedAt,
+  authorizationCheckedAt,
+  assetAccessedAt,
+  completedAt,
+}) {
+  const events = [
+    { type: 'HANDOVER_INITIATED', at: initiatedAt },
+    { type: 'BENEFICIARY_IDENTIFIED', at: initiatedAt },
+    { type: 'BENEFICIARY_NOTIFIED', at: initiatedAt },
+  ]
+  if (isVerified) {
+    events.push({ type: 'IDENTITY_VERIFIED', at: verifiedAt || initiatedAt })
+  }
+  if (isAccessReady) {
+    const authAt = authorizationCheckedAt || verifiedAt || initiatedAt
+    events.push({ type: 'AUTHORIZATION_CHECKED', at: authAt })
+    events.push({ type: 'READY_FOR_ACCESS', at: authAt })
+  }
+  if (assetAccessedAt || mappedStatus === 'RECEIPT_PENDING' || mappedStatus === 'COMPLETED') {
+    events.push({
+      type: 'ASSET_ACCESSED',
+      at: assetAccessedAt || completedAt || authorizationCheckedAt || initiatedAt,
+    })
+  }
+  if (mappedStatus === 'COMPLETED') {
+    events.push({
+      type: 'COMPLETED',
+      at: completedAt || assetAccessedAt || authorizationCheckedAt || initiatedAt,
+    })
+  }
+  return events
+}
+
 export const getBeneficiaryCase = async (user, caseId) => {
   if (isDemoMode()) return mockGetBeneficiaryCase(user, caseId)
-  const d = await getHandoverDetailsApi(caseId)
+  const d = await getHandoverDetailsApi(caseId, {
+    forBeneficiary: true,
+    beneficiaryEmail: (user?.identifier || user?.email || '').trim().toLowerCase(),
+  })
   const caseNum = d.case_number || caseId
-  const rawStatus = d.handover_status || d.status || 'BENEFICIARY_VERIFICATION_PENDING'
-  let mappedStatus = rawStatus
-  if (rawStatus === 'IN PROGRESS' || rawStatus === 'APPROVED') {
-    mappedStatus = 'BENEFICIARY_VERIFICATION_PENDING'
-  } else if (rawStatus === 'RELEASED') {
-    mappedStatus = 'READY_FOR_ACCESS'
+  const mappedStatus = mapBeneficiaryHandoverStatus(d.handover_status || d.status)
+  const savedTimeline = mergeStoredTimelineStates(user, caseNum, caseId)
+
+  const initiatedAt = d.created_at || savedTimeline.initiatedAt || new Date().toISOString()
+  if (!d.created_at && !savedTimeline.initiatedAt) {
+    saveStoredTimelineState(user, caseNum, { initiatedAt })
   }
 
   const isAccessReady = mappedStatus === 'READY_FOR_ACCESS' || mappedStatus === 'RECEIPT_PENDING' || mappedStatus === 'COMPLETED'
   const isVerified = isAccessReady || mappedStatus === 'IDENTITY_VERIFIED' || mappedStatus === 'AUTHORIZATION_CHECKED'
+  const verifiedAt = isVerified ? (d.verified_at || savedTimeline.identityVerifiedAt || d.created_at || initiatedAt) : null
+  const authorizationCheckedAt = isAccessReady ? (d.authorization_checked_at || savedTimeline.authorizationCheckedAt || d.created_at || initiatedAt) : null
+  const assetAccessedAt = d.asset_accessed_at || savedTimeline.assetAccessedAt || null
+  const resolvedCompletedAt = mappedStatus === 'COMPLETED'
+    ? (d.completed_at || savedTimeline.completedAt || new Date().toISOString())
+    : null
 
   const rawAssets = d.authorized_assets || d.authorized_collections_and_assets || []
   const assets = await Promise.all(
@@ -530,7 +698,7 @@ export const getBeneficiaryCase = async (user, caseId) => {
         authorizedBeneficiaryIds: [user?.id].filter(Boolean),
         releaseStatus: a.release_status || 'AUTHORIZED',
         protectedContent: decryptedContent,
-        documents: a.attachment_url ? [{ id: 'doc-1', name: a.attachment_url.split('/').pop() || 'Tài liệu đính kèm', size: 1024, url: a.attachment_url }] : (a.documents || []),
+        documents: parseAttachmentDocuments(a.attachment_url, a.documents),
       }
     })
   )
@@ -554,37 +722,50 @@ export const getBeneficiaryCase = async (user, caseId) => {
     verification: {
       failedAttempts: 0,
       locked: false,
-      verifiedAt: isVerified ? (d.verified_at || d.created_at || new Date().toISOString()) : null,
+      verifiedAt,
     },
-    authorizationCheckedAt: isAccessReady ? (d.authorization_checked_at || d.created_at || new Date().toISOString()) : null,
+    authorizationCheckedAt,
+    completedAt: resolvedCompletedAt,
     assets,
-    accessedAssetIds: [],
-    timeline: d.timeline_events || d.timeline || [
-      { type: 'HANDOVER_INITIATED', at: d.created_at || new Date().toISOString() },
-      { type: 'BENEFICIARY_IDENTIFIED', at: d.created_at || new Date().toISOString() },
-      { type: 'BENEFICIARY_NOTIFIED', at: d.created_at || new Date().toISOString() },
-    ],
+    accessedAssetIds: Array.isArray(savedTimeline.accessedAssetIds) ? savedTimeline.accessedAssetIds : [],
+    timeline: d.timeline_events || d.timeline || buildBeneficiaryTimeline({
+      initiatedAt,
+      isVerified,
+      isAccessReady,
+      mappedStatus,
+      verifiedAt,
+      authorizationCheckedAt,
+      assetAccessedAt,
+      completedAt: resolvedCompletedAt,
+    }),
   }
 }
 
 export const verifyIdentity = async (user, caseId, form) => {
   if (isDemoMode()) return mockVerifyIdentity(user, caseId, form)
+  let sessionToken = form?.sessionToken || form?.session_token || null
+  if (!sessionToken && typeof sessionStorage !== 'undefined' && caseId) {
+    sessionToken = sessionStorage.getItem('claim_session_token_' + caseId)
+  }
   await verifyBeneficiaryOtpApi({
     otpCode: form?.otp || form?.otp_code,
     caseRef: caseId,
+    sessionToken,
   })
+  const verifiedAt = new Date().toISOString()
+  saveStoredTimelineState(user, caseId, { identityVerifiedAt: verifiedAt })
   const current = await getBeneficiaryCase(user, caseId)
+  if (current?.id && current.id !== caseId) {
+    saveStoredTimelineState(user, current.id, { identityVerifiedAt: verifiedAt })
+  }
   return {
     ...current,
     status: 'IDENTITY_VERIFIED',
     verification: {
       ...current.verification,
-      verifiedAt: new Date().toISOString(),
+      verifiedAt,
     },
-    timeline: [
-      ...(current.timeline || []),
-      { type: 'IDENTITY_VERIFIED', at: new Date().toISOString() },
-    ],
+    timeline: ensureTimelineEvent(current.timeline, 'IDENTITY_VERIFIED', verifiedAt),
   }
 }
 
@@ -592,16 +773,19 @@ export const runAuthorizationCheck = async (user, caseId) => {
   if (isDemoMode()) return mockRunAuthorizationCheck(user, caseId)
   // A refused dispatch must stop here: the page shows the error and the assets stay locked.
   await dispatchSecureHandoverApi(caseId)
+  const authAt = new Date().toISOString()
+  saveStoredTimelineState(user, caseId, { authorizationCheckedAt: authAt })
   const current = await getBeneficiaryCase(user, caseId)
+  if (current?.id && current.id !== caseId) {
+    saveStoredTimelineState(user, current.id, { authorizationCheckedAt: authAt })
+  }
+  let timeline = ensureTimelineEvent(current.timeline, 'AUTHORIZATION_CHECKED', authAt)
+  timeline = ensureTimelineEvent(timeline, 'READY_FOR_ACCESS', authAt)
   return {
     ...current,
     status: 'READY_FOR_ACCESS',
-    authorizationCheckedAt: new Date().toISOString(),
-    timeline: [
-      ...(current.timeline || []),
-      { type: 'AUTHORIZATION_CHECKED', at: new Date().toISOString() },
-      { type: 'READY_FOR_ACCESS', at: new Date().toISOString() },
-    ],
+    authorizationCheckedAt: authAt,
+    timeline,
   }
 }
 
@@ -632,16 +816,18 @@ export const openAsset = async (user, caseId, assetId) => {
   const content = readAssetContent(detail) ||
     current.assets?.find((a) => a.id === assetId)?.protectedContent
   if (!content) throw new HandoverError('ASSET_CONTENT_UNAVAILABLE')
+  const accessedAt = new Date().toISOString()
   const accessed = Array.from(new Set([...(current.accessedAssetIds || []), assetId]))
+  saveStoredTimelineState(user, caseId, { assetAccessedAt: accessedAt, accessedAssetIds: accessed })
+  if (current?.id && current.id !== caseId) {
+    saveStoredTimelineState(user, current.id, { assetAccessedAt: accessedAt, accessedAssetIds: accessed })
+  }
   const nextStatus = current.status === 'READY_FOR_ACCESS' ? 'RECEIPT_PENDING' : current.status
   const updatedCase = {
     ...current,
     status: nextStatus,
     accessedAssetIds: accessed,
-    timeline: [
-      ...(current.timeline || []),
-      { type: 'ASSET_ACCESSED', at: new Date().toISOString() },
-    ],
+    timeline: ensureTimelineEvent(current.timeline, 'ASSET_ACCESSED', accessedAt),
   }
   return { assetId, content, case: updatedCase }
 }
@@ -661,16 +847,24 @@ export const recordAssetDownload = async (user, caseId, assetId) => {
 export const confirmReceipt = async (user, caseId) => {
   if (isDemoMode()) return mockConfirmReceipt(user, caseId)
   // COMPLETED is shown only after the backend accepted the confirmation.
-  await confirmReceivedAndCloseCaseApi({ accept_digital_estate_custody: true })
+  await confirmReceivedAndCloseCaseApi({ accept_digital_estate_custody: true }, caseId)
+  const completedAt = new Date().toISOString()
+  saveStoredTimelineState(user, caseId, { completedAt })
   const current = await getBeneficiaryCase(user, caseId)
+  if (current?.id && current.id !== caseId) {
+    saveStoredTimelineState(user, current.id, { completedAt })
+  }
+  let timeline = ensureTimelineEvent(
+    current.timeline,
+    'ASSET_ACCESSED',
+    loadStoredTimelineState(user, current?.id || caseId).assetAccessedAt || completedAt,
+  )
+  timeline = ensureTimelineEvent(timeline, 'COMPLETED', completedAt)
   return {
     ...current,
     status: 'COMPLETED',
-    completedAt: new Date().toISOString(),
-    timeline: [
-      ...(current.timeline || []),
-      { type: 'COMPLETED', at: new Date().toISOString() },
-    ],
+    completedAt,
+    timeline,
   }
 }
 
