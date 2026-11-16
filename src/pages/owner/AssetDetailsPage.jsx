@@ -44,8 +44,6 @@ export default function AssetDetailsPage({ assetId: propAssetId, onClose, isModa
   const [assetData, setAssetData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [showCredentials, setShowCredentials] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   // Handover Assignment state for this asset
   const [assignment, setAssignment] = useState(null)
@@ -147,22 +145,6 @@ export default function AssetDetailsPage({ assetId: propAssetId, onClose, isModa
     fetchAssetDetail()
     fetchAssignmentDetail()
   }, [fetchAssetDetail, fetchAssignmentDetail])
-
-  const handleCopyCredentials = (text) => {
-    if (!text) return
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text)
-    } else {
-      const textArea = document.createElement('textarea')
-      textArea.value = text
-      document.body.appendChild(textArea)
-      textArea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textArea)
-    }
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
 
   const handleDeleteAsset = async () => {
     if (!assetId) return
@@ -380,60 +362,6 @@ export default function AssetDetailsPage({ assetId: propAssetId, onClose, isModa
                 <dd className="detail-list__long">{asset.handoverNotes}</dd>
               </div>
             )}
-            {asset.decryptedCredentials && (
-              <div>
-                <dt>{isVi ? 'Thông tin bảo mật' : 'Credentials'}</dt>
-                <dd>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span
-                      style={{
-                        fontFamily: showCredentials ? 'inherit' : 'monospace',
-                        letterSpacing: showCredentials ? 'normal' : '2px',
-                        wordBreak: 'break-all',
-                        backgroundColor: 'var(--color-surface-subtle)',
-                        padding: '4px 8px',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--color-border)',
-                      }}
-                    >
-                      {showCredentials ? asset.decryptedCredentials : '••••••••••••••••••••'}
-                    </span>
-                    <button
-                      type="button"
-                      className="field__reveal"
-                      onClick={() => setShowCredentials((v) => !v)}
-                      title={showCredentials ? (isVi ? 'Ẩn' : 'Hide') : (isVi ? 'Hiện' : 'Show')}
-                      aria-label={showCredentials ? (isVi ? 'Ẩn' : 'Hide') : (isVi ? 'Hiện' : 'Show')}
-                      style={{
-                        border: 'none',
-                        background: 'transparent',
-                        cursor: 'pointer',
-                        padding: '4px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        color: 'var(--color-muted)',
-                      }}
-                    >
-                      <Icon name={showCredentials ? 'eyeOff' : 'eye'} size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyCredentials(asset.decryptedCredentials)}
-                      className="btn btn-secondary btn-sm"
-                      style={{ padding: '3px 8px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      title={isVi ? 'Sao chép mật khẩu' : 'Copy credentials'}
-                    >
-                      <Icon name={copied ? 'check' : 'copy'} size={14} />
-                      <span>
-                        {copied
-                          ? (isVi ? 'Đã sao chép' : 'Copied')
-                          : (isVi ? 'Sao chép' : 'Copy')}
-                      </span>
-                    </button>
-                  </div>
-                </dd>
-              </div>
-            )}
             <div>
               <dt>{copy.created}</dt>
               <dd>{formatDisplayDateTime(asset.createdAt)}</dd>
@@ -456,10 +384,6 @@ export default function AssetDetailsPage({ assetId: propAssetId, onClose, isModa
               </h2>
               {assignment && (
                 <div style={{ display: 'flex', gap: '6px' }}>
-                  <Button size="sm" variant="secondary" onClick={() => setIsEditAssignmentModalOpen(true)}>
-                    <Icon name="pencil" size={13} />
-                    {isVi ? 'Chỉnh sửa phân bổ' : 'Edit Assignment'}
-                  </Button>
                   <Button
                     size="sm"
                     variant="secondary"

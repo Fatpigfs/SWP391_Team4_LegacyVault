@@ -14,7 +14,7 @@ import {
   Layers,
   Users,
   Clock,
-  Pencil,
+  Trash2,
 } from 'lucide-react'
 import Button from '../../components/Button.jsx'
 import FormAlert from '../../components/auth/FormAlert.jsx'
@@ -29,9 +29,9 @@ import {
   validateAssignmentApi,
   createAssignmentApi,
   getAssignmentsListApi,
+  deleteAssignmentByAssetIdApi,
 } from '../../services/assignmentService.js'
 import { formatDisplayDate } from '../../vault/format.js'
-import EditAssignmentModal from '../../components/vault/EditAssignmentModal.jsx'
 
 const defaultInstructions = ``
 
@@ -57,8 +57,8 @@ export default function AssignmentsPage() {
   const [assignments, setAssignments] = useState([])
   const [loadingList, setLoadingList] = useState(true)
   const [listError, setListError] = useState(null)
-  const [editingAssignment, setEditingAssignment] = useState(null)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [deletingAssignment, setDeletingAssignment] = useState(null)
+  const [deletingLoading, setDeletingLoading] = useState(false)
   const [editSuccessMessage, setEditSuccessMessage] = useState(null)
 
   // Wizard States
@@ -123,35 +123,55 @@ export default function AssignmentsPage() {
 
   // Load assignments on initial mount
   useEffect(() => {
-    fetchAssignments()
+    let active = true
+    Promise.resolve().then(() => {
+      if (active) {
+        fetchAssignments()
+      }
+    })
+    return () => {
+      active = false
+    }
   }, [fetchAssignments])
 
   // 2. Fetch Assets & Contacts from backend for the Wizard
+  const loadWizardAssets = useCallback(async () => {
+    const token = localStorage.getItem('token') || localStorage.getItem('legacyvault-access-token')
+    if (!token) return
+
+    try {
+      const apiAssets = await getAssetsListApi()
+      if (Array.isArray(apiAssets)) {
+        const mapped = apiAssets.map((a) => {
+          const isAssigned = String(a.status || '').toLowerCase() === 'assigned'
+          return {
+            id: a.assetId || a.id,
+            name: a.assetName || a.name || 'Digital Asset',
+            assetType: a.assetType || 'Asset',
+            rawStatus: a.status || 'Active',
+            isAssigned,
+            icon: a.assetType === 'crypto_wallet' || a.assetType === 'Crypto Wallet' || a.assetType === 'CRYPTO' ? Wallet : CreditCard,
+          }
+        })
+        setAvailableAssets(mapped)
+        const firstUnassigned = mapped.find((item) => !item.isAssigned)
+        setSelectedAssetIds(firstUnassigned ? [firstUnassigned.id] : [])
+      } else {
+        setAvailableAssets([])
+        setSelectedAssetIds([])
+      }
+    } catch {
+      setAvailableAssets([])
+      setSelectedAssetIds([])
+    }
+  }, [])
+
   useEffect(() => {
     async function loadWizardData() {
       const token = localStorage.getItem('token') || localStorage.getItem('legacyvault-access-token')
       if (!token) return
 
-      // Load Assets
-      try {
-        const apiAssets = await getAssetsListApi()
-        if (Array.isArray(apiAssets)) {
-          const mapped = apiAssets.map((a) => ({
-            id: a.assetId || a.id,
-            name: a.assetName || a.name || 'Digital Asset',
-            desc: `${a.assetType || 'Asset'} · ${a.status || 'Active'}`,
-            icon: a.assetType === 'crypto_wallet' || a.assetType === 'Crypto Wallet' || a.assetType === 'CRYPTO' ? Wallet : CreditCard,
-          }))
-          setAvailableAssets(mapped)
-          setSelectedAssetIds(mapped.length > 0 ? [mapped[0].id] : [])
-        } else {
-          setAvailableAssets([])
-          setSelectedAssetIds([])
-        }
-      } catch {
-        setAvailableAssets([])
-        setSelectedAssetIds([])
-      }
+      await loadWizardAssets()
 
       // Load Contacts
       try {
@@ -205,11 +225,28 @@ export default function AssignmentsPage() {
     }
 
     loadWizardData()
-  }, [])
+  }, [loadWizardAssets])
+
+  const assignedAssetIds = React.useMemo(
+    () => new Set(assignments.map((item) => item.assetId).filter(Boolean)),
+    [assignments],
+  )
+  const resolvedAssets = React.useMemo(
+    () =>
+      availableAssets.map((a) => ({
+        ...a,
+        isAssigned: a.isAssigned || assignedAssetIds.has(a.id),
+      })),
+    [availableAssets, assignedAssetIds],
+  )
+  const unassignedAssets = React.useMemo(
+    () => resolvedAssets.filter((a) => !a.isAssigned),
+    [resolvedAssets],
+  )
 
   const selectedBeneficiaries = contacts.filter((c) => beneficiaryIds.includes(c.id))
   const executorContact = contacts.find((c) => c.id === executorId)
-  const selectedAssets = availableAssets.filter((a) => selectedAssetIds.includes(a.id))
+  const selectedAssets = resolvedAssets.filter((a) => selectedAssetIds.includes(a.id))
 
   const stepsList = [
     isVi ? 'Chọn tài sản' : 'Select Asset',
@@ -219,10 +256,31 @@ export default function AssignmentsPage() {
   ]
 
   const toggleAsset = (id) => {
+    const target = resolvedAssets.find((a) => a.id === id)
+    if (target?.isAssigned) return
     setSelectedAssetIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     )
     setErrors([])
+  }
+
+  const toggleSelectAllUnassigned = () => {
+    if (!unassignedAssets.length) return
+    const unassignedIds = unassignedAssets.map((a) => a.id)
+    const allSelected = unassignedIds.every((id) => selectedAssetIds.includes(id))
+    setSelectedAssetIds(allSelected ? [] : unassignedIds)
+    setErrors([])
+  }
+
+  const openCreateWizard = () => {
+    setViewMode('wizard')
+    setStep(1)
+    setValidationResult(null)
+    setCreatedAssignment(null)
+    setErrors([])
+    const firstUnassigned = resolvedAssets.find((a) => !a.isAssigned)
+    setSelectedAssetIds(firstUnassigned ? [firstUnassigned.id] : [])
+    loadWizardAssets()
   }
 
   const getUnverifiedContactMessage = (contact) => {
@@ -252,12 +310,23 @@ export default function AssignmentsPage() {
   // Handle Wizard Navigation & API Validation (Step 3)
   const handleNext = async () => {
     setErrors([])
+    const validSelectedIds = selectedAssetIds.filter((id) => {
+      const asset = resolvedAssets.find((a) => a.id === id)
+      return Boolean(id) && !asset?.isAssigned
+    })
 
     // Step 1 Validation
     if (step === 1) {
-      if (!selectedAssetIds.length) {
-        setErrors([isVi ? 'Vui lòng chọn ít nhất một tài sản.' : 'Select at least one asset.'])
+      if (!validSelectedIds.length) {
+        setErrors([
+          isVi
+            ? 'Vui lòng chọn ít nhất một tài sản chưa phân công.'
+            : 'Select at least one unassigned asset.',
+        ])
         return
+      }
+      if (validSelectedIds.length !== selectedAssetIds.length) {
+        setSelectedAssetIds(validSelectedIds)
       }
       setStep(2)
       return
@@ -287,7 +356,7 @@ export default function AssignmentsPage() {
       return
     }
 
-    // Step 3 Validation: Call POST /api/v1/assignments/validate
+    // Step 3 Validation: Call POST /api/v1/assignments/validate for every selected asset
     if (step === 3) {
       if (!handoverInstructions || !handoverInstructions.trim()) {
         setErrors([
@@ -296,9 +365,12 @@ export default function AssignmentsPage() {
         return
       }
 
-      const assetId = selectedAssetIds[0]
-      if (!assetId) {
-        setErrors([isVi ? 'Không tìm thấy ID tài sản đã chọn.' : 'Selected asset ID is missing.'])
+      if (!validSelectedIds.length) {
+        setErrors([
+          isVi
+            ? 'Không tìm thấy ID tài sản chưa phân công đã chọn.'
+            : 'Selected unassigned asset ID is missing.',
+        ])
         return
       }
       if (!executorId) {
@@ -314,23 +386,39 @@ export default function AssignmentsPage() {
 
       setValidating(true)
       try {
-        const response = await validateAssignmentApi({
-          assetId,
-          executorContactId: executorId,
-          handoverInstructions: handoverInstructions.trim(),
-          beneficiaryContactIds: beneficiaryIds,
-        })
-
-        if (response && (response.valid === true || response.message)) {
-          setValidationResult(response)
-          setErrors([])
-          setStep(4)
-        } else {
-          setErrors([
-            response?.error ||
-            (isVi ? 'Cấu hình bàn giao không hợp lệ.' : 'Assignment configuration is invalid.'),
-          ])
+        let lastResponse = null
+        for (const assetId of validSelectedIds) {
+          lastResponse = await validateAssignmentApi({
+            assetId,
+            executorContactId: executorId,
+            handoverInstructions: handoverInstructions.trim(),
+            beneficiaryContactIds: beneficiaryIds,
+          })
+          if (!(lastResponse && (lastResponse.valid === true || lastResponse.message))) {
+            setErrors([
+              lastResponse?.error ||
+              (isVi ? 'Cấu hình bàn giao không hợp lệ.' : 'Assignment configuration is invalid.'),
+            ])
+            return
+          }
         }
+
+        const selectedNames = resolvedAssets
+          .filter((a) => validSelectedIds.includes(a.id))
+          .map((a) => a.name)
+          .join(', ')
+
+        setValidationResult({
+          valid: true,
+          message:
+            lastResponse?.message ||
+            (isVi ? 'Cấu hình bàn giao hợp lệ' : 'Assignment configuration is valid'),
+          assetName: selectedNames || lastResponse?.assetName,
+          executorName: lastResponse?.executorName || executorContact?.name,
+          beneficiariesCount: beneficiaryIds.length,
+        })
+        setErrors([])
+        setStep(4)
       } catch (err) {
         console.error('Validation error:', err)
         if (err.status === 401 || err.status === 403) {
@@ -361,9 +449,17 @@ export default function AssignmentsPage() {
       return
     }
 
-    // Step 4: Call POST /api/v1/assignments to officially create the assignment
+    // Step 4: Call POST /api/v1/assignments for every selected asset in the group
     if (step === 4) {
-      const assetId = selectedAssetIds[0]
+      if (!validSelectedIds.length) {
+        setErrors([
+          isVi
+            ? 'Không tìm thấy tài sản chưa phân công để tạo hồ sơ.'
+            : 'No unassigned asset selected.',
+        ])
+        return
+      }
+
       const executorContactId = executorId
       const beneficiaryContactIds = beneficiaryIds
 
@@ -371,23 +467,41 @@ export default function AssignmentsPage() {
       setErrors([])
 
       try {
-        const response = await createAssignmentApi({
-          assetId,
-          executorContactId,
-          handoverInstructions: handoverInstructions.trim(),
-          beneficiaryContactIds,
-        })
-
-        if (response && (response.assignment || response.message)) {
-          setCreatedAssignment(response.assignment || null)
-          setErrors([])
-          setStep(5) // Move to success step
-        } else {
-          setErrors([
-            response?.error ||
-            (isVi ? 'Không thể tạo hồ sơ bàn giao.' : 'Failed to create assignment.'),
-          ])
+        const createdNames = []
+        let lastAssignment = null
+        for (const assetId of validSelectedIds) {
+          const response = await createAssignmentApi({
+            assetId,
+            executorContactId,
+            handoverInstructions: handoverInstructions.trim(),
+            beneficiaryContactIds,
+          })
+          if (response && (response.assignment || response.message)) {
+            lastAssignment = response.assignment || null
+            const matched = resolvedAssets.find((a) => a.id === assetId)
+            createdNames.push(response.assignment?.assetName || matched?.name || assetId)
+          } else {
+            setErrors([
+              response?.error ||
+              (isVi ? 'Không thể tạo hồ sơ bàn giao.' : 'Failed to create assignment.'),
+            ])
+            return
+          }
         }
+
+        setAvailableAssets((prev) =>
+          prev.map((a) =>
+            validSelectedIds.includes(a.id)
+              ? { ...a, isAssigned: true, rawStatus: 'assigned' }
+              : a,
+          ),
+        )
+        setCreatedAssignment({
+          ...(lastAssignment || {}),
+          assetName: createdNames.join(', '),
+        })
+        setErrors([])
+        setStep(5) // Move to success step
       } catch (err) {
         console.error('Create assignment error:', err)
         if (err.status === 401 || err.status === 403) {
@@ -412,9 +526,41 @@ export default function AssignmentsPage() {
           (isVi ? 'Không thể tạo hồ sơ bàn giao.' : 'Failed to create assignment.')
 
         setErrors([errorMessage])
+        fetchAssignments()
+        loadWizardAssets()
       } finally {
         setSubmitting(false)
       }
+    }
+  }
+
+  const handleConfirmDeleteAssignment = async () => {
+    if (!deletingAssignment?.assetId) return
+    setDeletingLoading(true)
+    setListError(null)
+    setEditSuccessMessage(null)
+    try {
+      const res = await deleteAssignmentByAssetIdApi(deletingAssignment.assetId)
+      setEditSuccessMessage(
+        res?.message ||
+          (isVi
+            ? `Đã xóa cấu hình bàn giao cho tài sản "${deletingAssignment.assetName}" thành công.`
+            : `Deleted assignment for "${deletingAssignment.assetName}" successfully.`),
+      )
+      setDeletingAssignment(null)
+      await fetchAssignments()
+      await loadWizardAssets()
+      setTimeout(() => setEditSuccessMessage(null), 5000)
+    } catch (err) {
+      setListError(
+        err.data?.error ||
+          err.data?.message ||
+          err.message ||
+          (isVi ? 'Không thể xóa cấu hình bàn giao.' : 'Failed to delete assignment.'),
+      )
+      setDeletingAssignment(null)
+    } finally {
+      setDeletingLoading(false)
     }
   }
 
@@ -434,13 +580,7 @@ export default function AssignmentsPage() {
               : 'Manage handover configurations, beneficiaries, and executors assigned to your digital assets.'
           }
           actions={
-            <Button
-              onClick={() => {
-                setViewMode('wizard')
-                setStep(1)
-                setErrors([])
-              }}
-            >
+            <Button onClick={openCreateWizard}>
               <Plus size={16} />
               {isVi ? 'Tạo bàn giao mới' : 'New Assignment'}
             </Button>
@@ -477,13 +617,7 @@ export default function AssignmentsPage() {
                   ? 'Bạn chưa thiết lập hồ sơ bàn giao nào. Hãy bắt đầu bằng cách tạo cấu hình bàn giao tài sản đầu tiên.'
                   : 'You have not configured any asset assignments yet. Start by assigning an asset to your designated beneficiaries and executor.'}
               </p>
-              <Button
-                onClick={() => {
-                  setViewMode('wizard')
-                  setStep(1)
-                  setErrors([])
-                }}
-              >
+              <Button onClick={openCreateWizard}>
                 <Plus size={16} />
                 {isVi ? 'Tạo bàn giao mới' : 'Create New Assignment'}
               </Button>
@@ -554,13 +688,11 @@ export default function AssignmentsPage() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => {
-                            setEditingAssignment(item)
-                            setIsEditModalOpen(true)
-                          }}
+                          onClick={() => setDeletingAssignment(item)}
+                          style={{ color: 'var(--color-danger, #ef4444)' }}
                         >
-                          <Pencil size={13} style={{ marginRight: 4 }} />
-                          {isVi ? 'Chỉnh sửa' : 'Edit'}
+                          <Trash2 size={13} style={{ marginRight: 4 }} />
+                          {isVi ? 'Xóa' : 'Delete'}
                         </Button>
                       </td>
                     </tr>
@@ -571,26 +703,62 @@ export default function AssignmentsPage() {
           </section>
         )}
 
-        <EditAssignmentModal
-          isOpen={isEditModalOpen}
-          onClose={() => {
-            setIsEditModalOpen(false)
-            setEditingAssignment(null)
-          }}
-          asset={{
-            assetId: editingAssignment?.assetId,
-            assetName: editingAssignment?.assetName,
-            assetType: editingAssignment?.assetType,
-          }}
-          currentAssignment={editingAssignment}
-          onSuccess={(res) => {
-            setEditSuccessMessage(
-              res?.message || (isVi ? 'Cập nhật phân bổ tài sản thành công!' : 'Assignment updated successfully!'),
-            )
-            fetchAssignments()
-            setTimeout(() => setEditSuccessMessage(null), 5000)
-          }}
-        />
+        {deletingAssignment && (
+          <div
+            className="flow-modal-overlay"
+            onMouseDown={() => {
+              if (!deletingLoading) setDeletingAssignment(null)
+            }}
+          >
+            <div
+              className="flow-modal"
+              style={{ maxWidth: '440px' }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ margin: '0 0 12px', fontSize: '18px', color: '#ef4444' }}>
+                {isVi ? 'Xác nhận xóa phân công' : 'Confirm Delete Assignment'}
+              </h3>
+              <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', margin: '0 0 24px' }}>
+                {isVi
+                  ? `Bạn có chắc chắn muốn xóa cấu hình bàn giao cho tài sản "${deletingAssignment.assetName}" không? Sau khi xóa, tài sản sẽ trở về trạng thái chưa phân công và các liên hệ liên quan có thể được thao tác lại trong trang Contacts.`
+                  : `Are you sure you want to delete the handover assignment for "${deletingAssignment.assetName}"? Once deleted, the asset will become unassigned and related contacts can be modified again in Contacts.`}
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <Button
+                  variant="secondary"
+                  disabled={deletingLoading}
+                  onClick={() => setDeletingAssignment(null)}
+                >
+                  {isVi ? 'Hủy bỏ' : 'Cancel'}
+                </Button>
+                <button
+                  type="button"
+                  disabled={deletingLoading}
+                  onClick={handleConfirmDeleteAssignment}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#fff',
+                    background: '#ef4444',
+                    border: 'none',
+                    cursor: deletingLoading ? 'not-allowed' : 'pointer',
+                    opacity: deletingLoading ? 0.7 : 1,
+                  }}
+                >
+                  {deletingLoading
+                    ? isVi
+                      ? 'Đang xóa…'
+                      : 'Deleting…'
+                    : isVi
+                    ? 'Xóa phân công'
+                    : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </OwnerLayout>
     )
   }
@@ -629,8 +797,8 @@ export default function AssignmentsPage() {
             <h2>{isVi ? 'Đã lưu cấu hình phân công thành công!' : 'Assignment Configuration Saved'}</h2>
             <p>
               {isVi
-                ? `Hồ sơ bàn giao cho tài sản "${createdAssignment?.assetName || selectedAssets[0]?.name}" đã được tạo thành công trên hệ thống.`
-                : `Assignment for "${createdAssignment?.assetName || selectedAssets[0]?.name}" has been successfully created in the system.`}
+                ? `Hồ sơ bàn giao cho tài sản "${createdAssignment?.assetName || selectedAssets.map((a) => a.name).join(', ')}" đã được tạo thành công trên hệ thống.`
+                : `Assignment for "${createdAssignment?.assetName || selectedAssets.map((a) => a.name).join(', ')}" has been successfully created in the system.`}
             </p>
             <div className="info-strip">
               <Info size={16} />
@@ -642,12 +810,7 @@ export default function AssignmentsPage() {
             </div>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <Button
-                onClick={() => {
-                  setStep(1)
-                  setValidationResult(null)
-                  setCreatedAssignment(null)
-                  setErrors([])
-                }}
+                onClick={openCreateWizard}
                 variant="secondary"
               >
                 {isVi ? 'Tạo lượt phân công khác' : 'Create Another Assignment'}
@@ -686,40 +849,73 @@ export default function AssignmentsPage() {
           {/* Step 1: Select Assets */}
           {step === 1 && (
             <div className="panel">
-              <h2 style={{ fontSize: '1.25rem', margin: '0 0 6px', color: 'var(--color-heading)' }}>
-                {isVi ? 'Bước 1: Chọn tài sản số cần phân công' : 'Step 1: Select Digital Assets to Assign'}
-              </h2>
-              <p className="selection-note">
-                {isVi
-                  ? `Chọn tài sản số để lập hồ sơ phân chia và bàn giao (Đã chọn: ${selectedAssetIds.length}).`
-                  : `Select digital assets to assign (${selectedAssetIds.length} selected).`}
-              </p>
-
-              <div className="asset-selection-grid">
-                {availableAssets.map((asset) => {
-                  const IconComp = asset.icon || Wallet
-                  const isChosen = selectedAssetIds.includes(asset.id)
-                  return (
-                    <button
-                      type="button"
-                      key={asset.id}
-                      className={`asset-select-card ${isChosen ? 'chosen' : ''}`}
-                      onClick={() => toggleAsset(asset.id)}
-                    >
-                      <div className="asset-top">
-                        <span className="asset-icon">
-                          <IconComp size={20} />
-                        </span>
-                        <span className={`asset-checkbox ${isChosen ? 'on' : ''}`}>
-                          {isChosen && <Check size={14} />}
-                        </span>
-                      </div>
-                      <b>{asset.name}</b>
-                      <small>{asset.desc}</small>
-                    </button>
-                  )
-                })}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', margin: '0 0 6px', color: 'var(--color-heading)' }}>
+                    {isVi ? 'Bước 1: Chọn tài sản số cần phân công' : 'Step 1: Select Digital Assets to Assign'}
+                  </h2>
+                  <p className="selection-note" style={{ margin: 0 }}>
+                    {isVi
+                      ? `Chọn từng tài sản hoặc chọn nhiều tài sản thành một nhóm để phân công cùng lúc (Đã chọn: ${selectedAssetIds.length}).`
+                      : `Select one or multiple unassigned assets as a group (${selectedAssetIds.length} selected).`}
+                  </p>
+                </div>
+                {unassignedAssets.length > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={toggleSelectAllUnassigned}
+                  >
+                    {unassignedAssets.every((a) => selectedAssetIds.includes(a.id))
+                      ? (isVi ? 'Bỏ chọn tất cả' : 'Clear Selection')
+                      : (isVi ? `Chọn tất cả chưa phân công (${unassignedAssets.length})` : `Select all unassigned (${unassignedAssets.length})`)}
+                  </Button>
+                )}
               </div>
+
+              {resolvedAssets.length === 0 ? (
+                <p style={{ color: 'var(--color-muted)', marginTop: '16px' }}>
+                  {isVi ? 'Bạn chưa có tài sản số nào trong kho.' : 'No digital assets found in your vault yet.'}
+                </p>
+              ) : (
+                <div className="asset-selection-grid" style={{ marginTop: '16px' }}>
+                  {resolvedAssets.map((asset) => {
+                    const IconComp = asset.icon || Wallet
+                    const isDisabled = asset.isAssigned
+                    const isChosen = !isDisabled && selectedAssetIds.includes(asset.id)
+                    return (
+                      <button
+                        type="button"
+                        key={asset.id}
+                        disabled={isDisabled}
+                        className={`asset-select-card ${isChosen ? 'chosen' : ''}`}
+                        style={isDisabled ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+                        onClick={() => toggleAsset(asset.id)}
+                      >
+                        <div className="asset-top">
+                          <span className="asset-icon">
+                            <IconComp size={20} />
+                          </span>
+                          {isDisabled ? (
+                            <span className="badge green">
+                              {isVi ? 'Đã phân công' : 'Assigned'}
+                            </span>
+                          ) : (
+                            <span className={`asset-checkbox ${isChosen ? 'on' : ''}`}>
+                              {isChosen && <Check size={14} />}
+                            </span>
+                          )}
+                        </div>
+                        <b>{asset.name}</b>
+                        <small>
+                          {asset.assetType} · {isDisabled ? (isVi ? 'Đã phân công' : 'Assigned') : asset.rawStatus}
+                        </small>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
 

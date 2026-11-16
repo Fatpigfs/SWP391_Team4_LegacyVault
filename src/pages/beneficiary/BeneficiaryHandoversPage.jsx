@@ -387,8 +387,8 @@ export default function BeneficiaryHandoversPage() {
                           ) : (
                             <span className="beneficiary-meta-box__sub">
                               {isVi
-                                ? 'Chưa có thông tin tài sản đính kèm'
-                                : 'No asset items listed yet'}
+                                ? 'Chưa có tài sản nào được phân công cho bạn'
+                                : 'No assets assigned to you in this case'}
                             </span>
                           )}
                         </div>

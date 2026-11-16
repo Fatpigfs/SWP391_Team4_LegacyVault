@@ -823,7 +823,7 @@ export default function DeadMansSwitchPage() {
               <div style={{ marginTop: 24 }}>
                 <Button variant="secondary" onClick={handleCheckIn} disabled={syncing}>
                   <RotateCcw size={16} />
-                  {isVi ? 'Khôi phục lại két (Reset Demo)' : 'Reset Demo State'}
+                  {isVi ? 'Khôi phục lại két (Reset State)' : 'Reset State'}
                 </Button>
               </div>
             </section>
