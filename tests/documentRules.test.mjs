@@ -88,3 +88,17 @@ test('checkNewFiles enforces maxFiles across existing and newly picked files', (
   assert.equal(accepted[0].name, 'extra_1.pdf')
   assert.deepEqual(rejected, [{ name: 'extra_2.pdf', reason: 'count' }])
 })
+
+test('extractDocumentName and parseAttachmentDocuments strip .enc suffix from encrypted stored filenames', () => {
+  const encryptedUrl =
+    'http://localhost:8080/api/v1/assets/documents/11111111-1111-1111-1111-111111111111_filea.pdf.enc'
+  assert.equal(extractDocumentName(encryptedUrl), 'filea.pdf')
+
+  const docs = parseAttachmentDocuments(encryptedUrl, { idPrefix: 'enc-doc' })
+  assert.equal(docs.length, 1)
+  assert.equal(docs[0].name, 'filea.pdf')
+  assert.equal(
+    normalizeDocumentNameForCompare('filea.pdf.enc'),
+    normalizeDocumentNameForCompare('filea.pdf'),
+  )
+})

@@ -791,8 +791,10 @@ export const openAsset = async (user, caseId, assetId) => {
     console.warn('Could not fetch decrypted asset detail from API, falling back to case assets:', err)
   }
   const current = await getBeneficiaryCase(user, caseId)
+  const matchedAsset = current.assets?.find((a) => a.id === assetId)
   const content = readAssetContent(detail) ||
-    current.assets?.find((a) => a.id === assetId)?.protectedContent
+    matchedAsset?.protectedContent ||
+    (matchedAsset?.documents?.length ? (matchedAsset.description || matchedAsset.name) : '')
   if (!content) throw new HandoverError('ASSET_CONTENT_UNAVAILABLE')
   const accessedAt = new Date().toISOString()
   const accessed = Array.from(new Set([...(current.accessedAssetIds || []), assetId]))

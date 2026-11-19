@@ -14,7 +14,7 @@ import {
 import { vaultContent } from '../../data/vaultContent.js'
 import { useLanguage } from '../../i18n/LanguageContext.jsx'
 import { updateAssetApi } from '../../services/vaultService.js'
-import { uploadAssetDocumentApi } from '../../services/documentService.js'
+import { openOrDownloadAssetDocument, uploadAssetDocumentApi } from '../../services/documentService.js'
 
 // Mapping giữa code hệ thống và tên loại tài sản backend API
 const RAW_TO_BACKEND = {
@@ -520,10 +520,22 @@ export default function EditAssetModal({ isOpen, onClose, asset, onSuccess }) {
                       {item.url ? (
                         <a
                           href={item.resolvedUrl || resolveAttachmentUrl(item.url)}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            openOrDownloadAssetDocument(item.resolvedUrl || item.url, {
+                              fileName: item.name,
+                              assetId: asset?.assetId || asset?.id,
+                            }).catch((err) => {
+                              setError(
+                                err.message ||
+                                  (isVi
+                                    ? 'Không thể giải mã hoặc mở tài liệu đính kèm.'
+                                    : 'Failed to decrypt or open attached document.'),
+                              )
+                            })
+                          }}
                           className="file-list__name link"
-                          style={{ textDecoration: 'underline', color: 'var(--color-primary)' }}
+                          style={{ textDecoration: 'underline', color: 'var(--color-primary)', cursor: 'pointer' }}
                         >
                           {item.name}
                         </a>

@@ -27,8 +27,14 @@ export function resolveAttachmentUrl(rawUrl) {
   return trimmed
 }
 
+export function stripEncryptedExtension(fileName) {
+  const str = String(fileName || '').trim()
+  return str.toLowerCase().endsWith('.enc') ? str.slice(0, -4) : str
+}
+
 export function extractDocumentName(url, fallbackName = 'attachment.pdf') {
-  const lastPart = String(url || '').split('/').pop() || ''
+  const cleanUrl = String(url || '').split('?')[0].split('#')[0]
+  const lastPart = cleanUrl.split('/').pop() || ''
   let rawFileName = lastPart
   try {
     rawFileName = decodeURIComponent(lastPart)
@@ -37,17 +43,16 @@ export function extractDocumentName(url, fallbackName = 'attachment.pdf') {
   }
   if (!rawFileName) return fallbackName
   const uIdx = rawFileName.indexOf('_')
-  if (uIdx === 36 && rawFileName.length > 37) {
-    return rawFileName.slice(37)
-  }
-  return rawFileName
+  const withoutUuid = (uIdx === 36 && rawFileName.length > 37)
+    ? rawFileName.slice(37)
+    : rawFileName
+  return stripEncryptedExtension(withoutUuid) || fallbackName
 }
 
 // Mirrors backend FileStorageSupport.buildStoredFilename sanitization so duplicate checks
 // match existing server documents even when spaces or Vietnamese characters became '_'.
 export function normalizeDocumentNameForCompare(name) {
-  return String(name || '')
-    .trim()
+  return stripEncryptedExtension(name)
     .replace(/[^a-zA-Z0-9._-]/g, '_')
     .toLowerCase()
 }

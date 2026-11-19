@@ -10,6 +10,7 @@ import { vaultContent } from '../../data/vaultContent.js'
 import { useLanguage } from '../../i18n/LanguageContext.jsx'
 import { deleteAssetApi, getAsset } from '../../services/vaultService.js'
 import { deleteAssignmentByAssetIdApi, getAssignmentByAssetIdApi } from '../../services/assignmentService.js'
+import { openOrDownloadAssetDocument } from '../../services/documentService.js'
 import { getTypeFields } from '../../vault/assetTypes.js'
 import { formatFileSize, parseAttachmentDocuments } from '../../vault/documentRules.js'
 import { formatDisplayDate, formatDisplayDateTime, formatFieldValue } from '../../vault/format.js'
@@ -246,6 +247,24 @@ export default function AssetDetailsPage({ assetId: propAssetId, onClose, isModa
   const assetType = asset.assetType || asset.type
   const isAssigned = !!assignment || (asset.status && asset.status.toLowerCase() === 'assigned')
   const typeFields = getTypeFields(assetType) || []
+
+  const handleOpenDocument = async (doc, download = false) => {
+    setActionErrorMessage(null)
+    try {
+      await openOrDownloadAssetDocument(doc.url, {
+        fileName: doc.name,
+        assetId: asset.assetId || asset.id || assetId,
+        download,
+      })
+    } catch (err) {
+      setActionErrorMessage(
+        err.message ||
+          (isVi
+            ? 'Không thể giải mã hoặc mở tài liệu đính kèm.'
+            : 'Failed to decrypt or open attached document.'),
+      )
+    }
+  }
 
   const content = (
     <>
@@ -605,23 +624,24 @@ export default function AssetDetailsPage({ assetId: propAssetId, onClose, isModa
                     <span className="file-list__name">
                       <a
                         href={doc.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          handleOpenDocument(doc, false)
+                        }}
                         className="link"
-                        style={{ textDecoration: 'underline', color: 'var(--color-primary)' }}
+                        style={{ textDecoration: 'underline', color: 'var(--color-primary)', cursor: 'pointer' }}
                       >
                         {doc.name}
                       </a>
                     </span>
-                    <a
-                      href={doc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDocument(doc, true)}
                       className="btn btn-secondary btn-sm"
-                      style={{ fontSize: '12px', padding: '3px 8px', textDecoration: 'none' }}
+                      style={{ fontSize: '12px', padding: '3px 8px' }}
                     >
                       {isVi ? 'Xem / Tải tệp' : 'View / Download'}
-                    </a>
+                    </button>
                   </li>
                 ))}
               </ul>

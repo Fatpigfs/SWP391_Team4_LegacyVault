@@ -8,9 +8,73 @@
 // contract (for example multipart upload or pre-signed URLs) and return the server's
 // document ids instead of the local ones.
 
+import { downloadBlob, getAuthToken, normalizeApiPath } from './apiClient.js'
+import { extractDocumentName, resolveAttachmentUrl } from '../vault/documentRules.js'
+
 export const UPLOAD_STATUS = {
   UPLOADED: 'UPLOADED',
   NOT_UPLOADED_DEMO: 'NOT_UPLOADED_DEMO',
+}
+
+export async function openOrDownloadAssetDocument(
+  docUrl,
+  { fileName, assetId, caseRef, download = false } = {},
+) {
+  const resolvedUrl = resolveAttachmentUrl(docUrl)
+  if (!resolvedUrl) {
+    throw new Error('Invalid document URL')
+  }
+
+  const token = getAuthToken()
+  const baseEndpoint = normalizeApiPath(resolvedUrl)
+  const params = new URLSearchParams()
+  if (assetId) params.set('asset_id', assetId)
+  if (caseRef) params.set('case_ref', caseRef)
+  if (download) params.set('download', 'true')
+  const query = params.toString()
+  const separator = baseEndpoint.includes('?') ? '&' : '?'
+  const endpoint = query ? `${baseEndpoint}${separator}${query}` : baseEndpoint
+
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    const error = new Error(
+      data?.error ||
+        data?.message ||
+        (response.status === 403
+          ? 'Bạn không có quyền giải mã hoặc truy cập tài liệu này.'
+          : 'Không thể tải hoặc giải mã tài liệu đính kèm.'),
+    )
+    error.status = response.status
+    error.data = data
+    throw error
+  }
+
+  const blob = await response.blob()
+  const cleanName = extractDocumentName(fileName || resolvedUrl, 'document.pdf')
+  const lowerName = cleanName.toLowerCase()
+
+  if (download || lowerName.endsWith('.docx')) {
+    downloadBlob(blob, cleanName)
+    return
+  }
+
+  if (typeof window !== 'undefined') {
+    const objectUrl = window.URL.createObjectURL(blob)
+    const openedWindow = window.open(objectUrl, '_blank', 'noopener,noreferrer')
+    if (!openedWindow) {
+      downloadBlob(blob, cleanName)
+    }
+    setTimeout(() => {
+      window.URL.revokeObjectURL(objectUrl)
+    }, 60000)
+  }
 }
 
 export async function uploadAssetDocumentApi(file) {

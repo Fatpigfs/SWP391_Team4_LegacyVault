@@ -27,6 +27,7 @@ import {
   runAuthorizationCheck,
   verifyIdentity,
 } from '../../services/handoverService.js'
+import { openOrDownloadAssetDocument } from '../../services/documentService.js'
 import { formatFileSize } from '../../vault/documentRules.js'
 import { formatDisplayDateTime } from '../../vault/format.js'
 import BeneficiaryFaceVerification from './BeneficiaryFaceVerification.jsx'
@@ -330,6 +331,21 @@ function AssetsPanel({ handover, user, t, onChange }) {
     URL.revokeObjectURL(url)
   }
 
+  const openAttachedDocument = async (asset, doc, forceDownload = false) => {
+    if (!doc?.url) return
+    setFailure(null)
+    try {
+      await openOrDownloadAssetDocument(doc.url, {
+        fileName: doc.name,
+        assetId: asset.id,
+        caseRef: handover.id,
+        download: forceDownload,
+      })
+    } catch (err) {
+      setFailure({ assetId: asset.id, error: err })
+    }
+  }
+
   return (
     <section className="card handover-panel" aria-labelledby="assets-title">
       <h2 id="assets-title" className="section-title"><Icon name="unlock" size={17} /> {c.assetsTitle}</h2>
@@ -357,24 +373,44 @@ function AssetsPanel({ handover, user, t, onChange }) {
                 {(asset.documents?.length ?? 0) ? (
                   <ul className="file-list file-list--compact">
                     {(asset.documents || []).map((doc) => (
-                      <li key={doc.id} className="file-list__item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span className="file-list__name">
-                          <Icon name="fileText" size={15} />{' '}
-                          {doc.url ? (
+                      <li key={doc.id} className="file-list__item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span className="file-list__name" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <Icon name={content ? 'fileText' : 'lock'} size={15} />
+                          {content && doc.url ? (
                             <a
                               href={doc.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ color: '#0f766e', fontWeight: 600, textDecoration: 'underline' }}
-                              title="Tải / Xem tệp đính kèm"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                openAttachedDocument(asset, doc, false)
+                              }}
+                              style={{ color: '#0f766e', fontWeight: 600, textDecoration: 'underline', cursor: 'pointer' }}
+                              title="Giải mã & xem tệp đính kèm"
                             >
                               {doc.name}
                             </a>
                           ) : (
-                            doc.name
+                            <span style={{ color: content ? undefined : '#64748b' }}>{doc.name}</span>
                           )}
                         </span>
-                        <span className="file-list__size">{formatFileSize(doc.size)}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                          {typeof doc.size === 'number' && (
+                            <span className="file-list__size">{formatFileSize(doc.size)}</span>
+                          )}
+                          {content && doc.url ? (
+                            <button
+                              type="button"
+                              onClick={() => openAttachedDocument(asset, doc, true)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '12px', padding: '2px 8px' }}
+                            >
+                              {c.download || 'Tải tệp'}
+                            </button>
+                          ) : (
+                            <span className="badge" style={{ fontSize: '11px' }}>
+                              AES-256 Encrypted
+                            </span>
+                          )}
+                        </span>
                       </li>
                     ))}
                   </ul>
