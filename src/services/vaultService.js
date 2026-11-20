@@ -6,7 +6,6 @@ import {
   mockListVaults,
 } from '../mocks/mockVaultStore.js'
 import { buildAssetFromForm } from '../vault/assetDraft.js'
-import { parseAttachmentDocuments } from '../vault/documentRules.js'
 import { VaultError } from '../vault/VaultError.js'
 import { prepareDocuments } from './documentService.js'
 import { prepareSensitiveData } from './encryptionService.js'
@@ -44,9 +43,8 @@ export async function listVaults(ownerId) {
       type: a.assetType,
       assetType: a.assetType,
       description: a.description,
-      attachmentUrl: a.attachmentUrl,
       status: a.status || 'unassigned',
-      relatedDocuments: parseAttachmentDocuments(a.attachmentUrl, { defaultSize: 1024 }),
+      relatedDocuments: a.attachmentUrl ? [{ id: 'doc-1', name: 'attachment', size: 1024 }] : [],
       createdAt: a.createdAt,
     }))
     return [vaults[0]]
@@ -76,9 +74,8 @@ export async function getVault(ownerId, vaultId) {
       type: a.assetType,
       assetType: a.assetType,
       description: a.description,
-      attachmentUrl: a.attachmentUrl,
       status: a.status || 'unassigned',
-      relatedDocuments: parseAttachmentDocuments(a.attachmentUrl, { defaultSize: 1024 }),
+      relatedDocuments: a.attachmentUrl ? [{ id: 'doc-1', name: 'attachment', size: 1024 }] : [],
       createdAt: a.createdAt,
     }))
   }
@@ -110,7 +107,24 @@ export async function getAsset(ownerId, vaultId, assetId) {
           attachmentUrl: realAsset.attachmentUrl,
           status: realAsset.status || 'unassigned',
           details: {},
-          relatedDocuments: parseAttachmentDocuments(realAsset.attachmentUrl, { defaultSize: 1024 }),
+          relatedDocuments: realAsset.attachmentUrl
+            ? realAsset.attachmentUrl
+                .split(',')
+                .map((u) => u.trim())
+                .filter(Boolean)
+                .map((url, idx) => {
+                  const rawFile = decodeURIComponent(url.split('/').pop() || 'attachment.pdf')
+                  const uIdx = rawFile.indexOf('_')
+                  const cleanName =
+                    uIdx === 36 && rawFile.length > 37 ? rawFile.slice(37) : rawFile
+                  return {
+                    id: `doc-${idx + 1}`,
+                    name: cleanName,
+                    size: 1024,
+                    url,
+                  }
+                })
+            : [],
           encryption: {
             status: 'ENCRYPTED',
             sensitiveFields: realAsset.decryptedCredentials ? ['decryptedCredentials'] : [],

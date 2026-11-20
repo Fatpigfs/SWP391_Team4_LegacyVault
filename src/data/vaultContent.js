@@ -108,7 +108,6 @@ const en = {
     remove: 'Remove',
     removeLabel: (name) => `Remove ${name}`,
     ready: 'Ready to upload',
-    uploaded: 'Uploaded',
     rejectedTitle: 'These files were not added:',
     reasons: {
       type: 'file type not allowed',
@@ -335,7 +334,6 @@ const vi = {
     remove: 'Xóa',
     removeLabel: (name) => `Xóa ${name}`,
     ready: 'Sẵn sàng tải lên',
-    uploaded: 'Đã tải lên',
     rejectedTitle: 'Các tệp sau không được thêm:',
     reasons: {
       type: 'loại tệp không được phép',

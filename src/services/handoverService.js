@@ -11,7 +11,6 @@ import {
   mockVerifyIdentity,
 } from '../mocks/mockHandoverStore.js'
 import { HandoverError } from '../handover/HandoverError.js'
-import { parseAttachmentDocuments as parseSharedAttachmentDocuments } from '../vault/documentRules.js'
 import { IS_DEMO_MODE, isDemoMode, apiFetch } from './apiClient.js'
 
 export { IS_DEMO_MODE, isDemoMode }
@@ -519,15 +518,38 @@ export const listBeneficiaryCases = async (user) => {
 }
 
 function parseAttachmentDocuments(attachmentUrl, fallbackDocs = []) {
-  const docs = parseSharedAttachmentDocuments(attachmentUrl, {
-    defaultSize: 1024,
-    fallbackName: (index) => `Tài liệu đính kèm ${index + 1}`,
-    useResolvedUrl: true,
-  })
-  if (docs.length === 0) {
+  if (!attachmentUrl || typeof attachmentUrl !== 'string') {
     return Array.isArray(fallbackDocs) ? fallbackDocs : []
   }
-  return docs
+  const urls = attachmentUrl
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean)
+  if (urls.length === 0) {
+    return Array.isArray(fallbackDocs) ? fallbackDocs : []
+  }
+  return urls.map((rawUrl, index) => {
+    const resolvedUrl = rawUrl.startsWith('https://storage.legacyvault.com/docs/')
+      ? `/api/v1/assets/documents/${rawUrl.slice('https://storage.legacyvault.com/docs/'.length)}`
+      : rawUrl
+    let rawFileName = `Tài liệu đính kèm ${index + 1}`
+    try {
+      rawFileName = decodeURIComponent(
+        resolvedUrl.split('/').pop() || rawFileName,
+      )
+    } catch {
+      rawFileName = resolvedUrl.split('/').pop() || rawFileName
+    }
+    const uIdx = rawFileName.indexOf('_')
+    const cleanName =
+      uIdx === 36 && rawFileName.length > 37 ? rawFileName.slice(37) : rawFileName
+    return {
+      id: `doc-${index + 1}`,
+      name: cleanName,
+      size: 1024,
+      url: resolvedUrl,
+    }
+  })
 }
 
 const memoryTimelineStore = new Map()
