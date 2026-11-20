@@ -15,9 +15,6 @@ export default function EncryptionStep({ asset, documentCount, vaultName, t }) {
       <div>
         <h2 className="step-title">{t.encryption.title}</h2>
       </div>
-
-      <FormAlert tone="info">{t.encryption.notBuilt}</FormAlert>
-
       <section className="review-box">
         <h3 className="review-box__title">{t.encryption.fieldsTitle}</h3>
         {sensitive.length === 0 ? (
@@ -37,10 +34,6 @@ export default function EncryptionStep({ asset, documentCount, vaultName, t }) {
       <section className="review-box">
         <h3 className="review-box__title">{t.encryption.summaryTitle}</h3>
         <dl className="detail-list">
-          <div>
-            <dt>{t.assetDetails.vault}</dt>
-            <dd>{vaultName}</dd>
-          </div>
           <div>
             <dt>{t.fields.name.label}</dt>
             <dd>{asset.name}</dd>

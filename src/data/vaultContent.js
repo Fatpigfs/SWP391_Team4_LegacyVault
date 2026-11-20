@@ -120,8 +120,7 @@ const en = {
 
   encryption: {
     title: 'Encrypt sensitive data',
-    notBuilt:
-      'Not encrypted in this demo. Encryption has not been built yet, so the fields below are kept as plain text in this browser tab’s memory. In the real system they must be encrypted before storage, using a design agreed with the backend team.',
+    notBuilt: '',
     fieldsTitle: 'Fields that would be encrypted',
     noneFilled: 'None of the sensitive fields are filled in for this asset.',
     summaryTitle: 'What will be saved',
