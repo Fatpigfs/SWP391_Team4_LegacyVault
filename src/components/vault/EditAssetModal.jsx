@@ -4,11 +4,17 @@ import FormAlert from '../auth/FormAlert.jsx'
 import FormField from '../auth/FormField.jsx'
 import Icon from '../Icon.jsx'
 import { ASSET_TYPES, getTypeFields } from '../../vault/assetTypes.js'
-import { DOCUMENT_RULES, formatFileSize, checkNewFiles } from '../../vault/documentRules.js'
+import {
+  DOCUMENT_RULES,
+  formatFileSize,
+  checkNewFiles,
+  parseAttachmentDocuments,
+  resolveAttachmentUrl,
+} from '../../vault/documentRules.js'
 import { vaultContent } from '../../data/vaultContent.js'
 import { useLanguage } from '../../i18n/LanguageContext.jsx'
 import { updateAssetApi } from '../../services/vaultService.js'
-import { uploadAssetDocumentApi } from '../../services/documentService.js'
+import { openOrDownloadAssetDocument, uploadAssetDocumentApi } from '../../services/documentService.js'
 
 // Mapping giữa code hệ thống và tên loại tài sản backend API
 const RAW_TO_BACKEND = {
@@ -121,18 +127,13 @@ export default function EditAssetModal({ isOpen, onClose, asset, onSuccess }) {
     }
 
     setFormValues(initial)
-    if (asset.attachmentUrl) {
-      const fileName = asset.attachmentUrl.split('/').pop() || (isVi ? 'Tài liệu đính kèm.pdf' : 'attachment.pdf')
-      setFiles([
-        {
-          id: 'existing-doc-1',
-          name: fileName,
-          size: 1024 * 256,
-        },
-      ])
-    } else {
-      setFiles([])
-    }
+    setFiles(
+      parseAttachmentDocuments(asset.attachmentUrl, {
+        defaultSize: null,
+        fallbackName: (idx) => (isVi ? `Tài liệu đính kèm ${idx + 1}.pdf` : `attachment-${idx + 1}.pdf`),
+        idPrefix: 'existing-doc',
+      }),
+    )
     setRejectedFiles([])
     setError(null)
     setSuccessMessage(null)
@@ -229,22 +230,40 @@ export default function EditAssetModal({ isOpen, onClose, asset, onSuccess }) {
     const finalCredentials = parts.join(' | ')
     const backendAssetType = RAW_TO_BACKEND[trimmedType] || trimmedType
 
-    let finalAttachmentUrl = formValues.attachmentUrl.trim()
-    const newFilesToUpload = files.filter((f) => f.file instanceof File)
-    if (newFilesToUpload.length > 0) {
+    const workingFiles = [...files]
+    for (let idx = 0; idx < workingFiles.length; idx += 1) {
+      const item = workingFiles[idx]
+      if (!(item.file instanceof File)) continue
       try {
-        const uploadedUrls = []
-        for (const item of newFilesToUpload) {
-          const uploaded = await uploadAssetDocumentApi(item.file)
-          if (uploaded?.url) uploadedUrls.push(uploaded.url)
+        const uploaded = await uploadAssetDocumentApi(item.file)
+        if (!uploaded?.url) {
+          throw new Error(isVi ? 'Máy chủ không trả về đường dẫn tệp.' : 'Server did not return a file URL.')
         }
-        if (uploadedUrls.length > 0) {
-          finalAttachmentUrl = uploadedUrls.join(',')
+        workingFiles[idx] = {
+          id: item.id,
+          name: uploaded.fileName || item.name,
+          size: typeof uploaded.fileSize === 'number' ? uploaded.fileSize : item.size,
+          url: uploaded.url,
+          resolvedUrl: resolveAttachmentUrl(uploaded.url),
         }
       } catch (uploadErr) {
-        console.warn('Upload document during edit asset warning:', uploadErr)
+        console.error('Upload document during edit asset error:', uploadErr)
+        setFiles(workingFiles)
+        const syncedUrls = workingFiles.map((f) => f.url).filter(Boolean).join(',')
+        setFormValues((prev) => ({ ...prev, attachmentUrl: syncedUrls }))
+        const detail = uploadErr.data?.error || uploadErr.data?.message || uploadErr.message || ''
+        setError(
+          isVi
+            ? `Không thể tải lên tệp "${item.name}"${detail ? `: ${detail}` : ''}. Vui lòng thử lại.`
+            : `Failed to upload "${item.name}"${detail ? `: ${detail}` : ''}. Please try again.`,
+        )
+        setIsSubmitting(false)
+        return
       }
     }
+
+    setFiles(workingFiles)
+    const finalAttachmentUrl = workingFiles.map((f) => f.url).filter(Boolean).join(',')
 
     const payload = {
       assetType: backendAssetType,
@@ -260,7 +279,7 @@ export default function EditAssetModal({ isOpen, onClose, asset, onSuccess }) {
 
       setSuccessMessage(
         response?.message ||
-          (isVi ? 'Cập nhật thông tin tài sản thành công!' : 'Asset updated successfully!'),
+        (isVi ? 'Cập nhật thông tin tài sản thành công!' : 'Asset updated successfully!'),
       )
 
       setTimeout(() => {
@@ -271,9 +290,9 @@ export default function EditAssetModal({ isOpen, onClose, asset, onSuccess }) {
       console.error('Update asset error:', err)
       setError(
         err.data?.error ||
-          err.data?.message ||
-          err.message ||
-          (isVi ? 'Không thể cập nhật tài sản.' : 'Failed to update asset.'),
+        err.data?.message ||
+        err.message ||
+        (isVi ? 'Không thể cập nhật tài sản.' : 'Failed to update asset.'),
       )
     } finally {
       setIsSubmitting(false)
@@ -498,9 +517,37 @@ export default function EditAssetModal({ isOpen, onClose, asset, onSuccess }) {
                   {files.map((item) => (
                     <li key={item.id} className="file-list__item">
                       <Icon name="fileText" size={18} />
-                      <span className="file-list__name">{item.name}</span>
-                      <span className="file-list__size">{formatFileSize(item.size)}</span>
-                      <span className="badge green">{t.documents.ready}</span>
+                      {item.url ? (
+                        <a
+                          href={item.resolvedUrl || resolveAttachmentUrl(item.url)}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            openOrDownloadAssetDocument(item.resolvedUrl || item.url, {
+                              fileName: item.name,
+                              assetId: asset?.assetId || asset?.id,
+                            }).catch((err) => {
+                              setError(
+                                err.message ||
+                                (isVi
+                                  ? 'Không thể giải mã hoặc mở tài liệu đính kèm.'
+                                  : 'Failed to decrypt or open attached document.'),
+                              )
+                            })
+                          }}
+                          className="file-list__name link"
+                          style={{ textDecoration: 'underline', color: 'var(--color-primary)', cursor: 'pointer' }}
+                        >
+                          {item.name}
+                        </a>
+                      ) : (
+                        <span className="file-list__name">{item.name}</span>
+                      )}
+                      {typeof item.size === 'number' && (
+                        <span className="file-list__size">{formatFileSize(item.size)}</span>
+                      )}
+
+                      {item.url ? t.documents.uploaded : t.documents.ready}
+
                       <button
                         type="button"
                         className="file-list__remove"
@@ -549,8 +596,8 @@ export default function EditAssetModal({ isOpen, onClose, asset, onSuccess }) {
                       ? 'Đã phân bổ'
                       : 'Assigned'
                     : isVi
-                    ? 'Chưa phân bổ'
-                    : 'Unassigned'}
+                      ? 'Chưa phân bổ'
+                      : 'Unassigned'}
                 </span>
                 <span style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>
                   {isVi
@@ -582,8 +629,8 @@ export default function EditAssetModal({ isOpen, onClose, asset, onSuccess }) {
                 ? 'Đang lưu...'
                 : 'Saving...'
               : isVi
-              ? 'Lưu thay đổi'
-              : 'Save Changes'}
+                ? 'Lưu thay đổi'
+                : 'Save Changes'}
           </Button>
         </div>
       </div>

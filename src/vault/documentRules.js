@@ -48,6 +48,36 @@ export function extractDocumentName(url, fallbackName = 'attachment.pdf') {
     : rawFileName
   return stripEncryptedExtension(withoutUuid) || fallbackName
 }
+
+export function parseAttachmentDocuments(attachmentUrl, options = {}) {
+  const {
+    defaultSize = null,
+    fallbackName = 'attachment.pdf',
+    idPrefix = 'doc',
+    useResolvedUrl = false,
+  } = options
+
+  if (!attachmentUrl || typeof attachmentUrl !== 'string') {
+    return []
+  }
+
+  return attachmentUrl
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean)
+    .map((rawUrl, index) => {
+      const resolvedUrl = resolveAttachmentUrl(rawUrl)
+      const fallback = typeof fallbackName === 'function' ? fallbackName(index) : fallbackName
+      return {
+        id: `${idPrefix}-${index + 1}`,
+        name: extractDocumentName(resolvedUrl, fallback),
+        size: defaultSize,
+        url: useResolvedUrl ? resolvedUrl : rawUrl,
+        resolvedUrl,
+      }
+    })
+}
+
 function getExtension(fileName) {
   const dot = fileName.lastIndexOf('.')
   return dot === -1 ? '' : fileName.slice(dot + 1).toLowerCase()

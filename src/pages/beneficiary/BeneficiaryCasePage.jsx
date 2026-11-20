@@ -323,12 +323,15 @@ function AssetsPanel({ handover, user, t, onChange }) {
     }
     const disclaimer = isDemoMode() ? `\n\n${c.demoDecrypt}\n` : ''
     const text = `${asset.name}\n${handover.id}\n\n${opened[asset.id]}${disclaimer}\n`
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
     const link = document.createElement('a')
+    link.style.display = 'none'
     link.href = url
     link.download = `${handover.id}-${asset.id}.txt`
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(url)
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const openAttachedDocument = async (asset, doc, forceDownload = false) => {
@@ -403,7 +406,7 @@ function AssetsPanel({ handover, user, t, onChange }) {
                               className="btn btn-secondary btn-sm"
                               style={{ fontSize: '12px', padding: '2px 8px' }}
                             >
-                              {c.download || 'Tải tệp'}
+                              {c.downloadFile || 'Download'}
                             </button>
                           ) : (
                             <span className="badge" style={{ fontSize: '11px' }}>

@@ -11,6 +11,7 @@ import {
   mockVerifyIdentity,
 } from '../mocks/mockHandoverStore.js'
 import { HandoverError } from '../handover/HandoverError.js'
+import { parseAttachmentDocuments as parseSharedAttachmentDocuments } from '../vault/documentRules.js'
 import { IS_DEMO_MODE, isDemoMode, apiFetch } from './apiClient.js'
 
 export { IS_DEMO_MODE, isDemoMode }
@@ -518,38 +519,15 @@ export const listBeneficiaryCases = async (user) => {
 }
 
 function parseAttachmentDocuments(attachmentUrl, fallbackDocs = []) {
-  if (!attachmentUrl || typeof attachmentUrl !== 'string') {
-    return Array.isArray(fallbackDocs) ? fallbackDocs : []
-  }
-  const urls = attachmentUrl
-    .split(',')
-    .map((u) => u.trim())
-    .filter(Boolean)
-  if (urls.length === 0) {
-    return Array.isArray(fallbackDocs) ? fallbackDocs : []
-  }
-  return urls.map((rawUrl, index) => {
-    const resolvedUrl = rawUrl.startsWith('https://storage.legacyvault.com/docs/')
-      ? `/api/v1/assets/documents/${rawUrl.slice('https://storage.legacyvault.com/docs/'.length)}`
-      : rawUrl
-    let rawFileName = `Tài liệu đính kèm ${index + 1}`
-    try {
-      rawFileName = decodeURIComponent(
-        resolvedUrl.split('/').pop() || rawFileName,
-      )
-    } catch {
-      rawFileName = resolvedUrl.split('/').pop() || rawFileName
-    }
-    const uIdx = rawFileName.indexOf('_')
-    const cleanName =
-      uIdx === 36 && rawFileName.length > 37 ? rawFileName.slice(37) : rawFileName
-    return {
-      id: `doc-${index + 1}`,
-      name: cleanName,
-      size: 1024,
-      url: resolvedUrl,
-    }
+  const docs = parseSharedAttachmentDocuments(attachmentUrl, {
+    defaultSize: null,
+    fallbackName: (index) => `Tài liệu đính kèm ${index + 1}`,
+    useResolvedUrl: true,
   })
+  if (docs.length === 0) {
+    return Array.isArray(fallbackDocs) ? fallbackDocs : []
+  }
+  return docs
 }
 
 const memoryTimelineStore = new Map()
@@ -674,7 +652,9 @@ export const getBeneficiaryCase = async (user, caseId) => {
       let decryptedContent = a.credentials || a.passphrase || a.decrypted_credentials || a.content || ''
       let description = a.description || ''
 
-      if (isAccessReady && !decryptedContent) {
+      // Do not pre-decrypt assets when the beneficiary first loads the case page;
+      // only fetch decrypted credentials automatically if the case is already COMPLETED.
+      if (mappedStatus === 'COMPLETED' && !decryptedContent) {
         try {
           const detail = await getDecryptedAssetDetailApi(assetId, caseId)
           decryptedContent = detail?.decrypted_credential_data?.passphrase ||
